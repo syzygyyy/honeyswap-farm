@@ -6,53 +6,58 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./HSFToken.sol";
 
 
 // Forked from sushiswap's MasterChef contract
-contract HoneyFarm is Ownable {
+contract HoneyFarm is Ownable, ERC721 {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
-    // Info of each user.
-    struct UserInfo {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
+    // Info of each deposit
+    struct DepositInfo {
         uint256 amount; // How many LP tokens the user has provided.
-        uint256 rewardDebt; // Reward debt. See explanation below.
-        //
-        // We do some fancy math here. Basically, any point in time, the amount of SUSHIs
-        // entitled to a user but is pending to be distributed is:
-        //
-        //   pending reward = (user.amount * pool.accSushiPerShare) - user.rewardDebt
-        //
-        // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accSushiPerShare` (and `lastRewardBlock`) gets updated.
-        //   2. User receives the pending reward sent to his/her address.
-        //   3. User's `amount` gets updated.
-        //   4. User's `rewardDebt` gets updated.
+        uint256 rewardDebt; // Reward debt (value of accumulator)
+        uint256 unlockTime;
+        uint256 rewardShare;
+        address pool;
     }
+
     // Info of each pool.
     struct PoolInfo {
-        IERC20 lpToken; // Address of LP token contract.
         uint256 allocPoint; // How many allocation points assigned to this pool. SUSHIs to distribute per block.
-        uint256 lastRewardBlock; // Last block number that SUSHIs distribution occurs.
-        uint256 accSushiPerShare; // Accumulated SUSHIs per share, times 1e12. See below.
+        uint256 lastRewardTimestamp; // Last block number that SUSHIs distribution occurs.
+        uint256 accHsfPerShare; // Accumulated HSFs per share, times SCALE. See below.
+        uint256 totalShares;
     }
-    // The SUSHI TOKEN!
-    SushiToken public sushi;
-    // Block number when bonus SUSHI period ends.
-    uint256 public bonusEndBlock;
-    // SUSHI tokens created per block.
-    uint256 public sushiPerBlock;
-    // Bonus muliplier for early sushi makers.
-    uint256 public constant BONUS_MULTIPLIER = 10;
+
+    // What fractional numbers are scaled by
+    uint256 public constant SCALE = 1 ether;
+    // The HoneySwap Farm token
+    IERC20 public immutable hsf;
     // Info of each pool.
-    PoolInfo[] public poolInfo;
-    // Info of each user that stakes LP tokens.
-    mapping(uint256 => mapping(address => UserInfo)) public userInfo;
+    mapping(IERC20 => PoolInfo) public poolInfo;
+    // set of running pools
+    EnumerableSet.AddressSet public pools;
     // Total allocation poitns. Must be the sum of all allocation points in all pools.
-    uint256 public totalAllocPoint = 0;
-    // The block number when SUSHI mining starts.
-    uint256 public startBlock;
+    uint256 public totalAllocPoint;
+    // total deposits
+    uint256 public totalDeposits;
+    // data about infdividual deposits
+    mapping(uint256 => DepositInfo) public depositInfo;
+    // negtaive distribution graph slope
+    uint256 public immutable distSlope;
+    // starting dist amount
+    uint256 public immutable startDist;
+    // maximum time someone can lock their liquidity for
+    uint256 public immutable maxTimeLock;
+    // time at which coins begin being distributed
+    uint256 public immutable startTime;
+    // time at which coins finish being distributed
+    uint256 public immutable endTime;
+
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(
@@ -62,171 +67,173 @@ contract HoneyFarm is Ownable {
     );
 
     constructor(
-        SushiToken _sushi,
-        address _devaddr,
-        uint256 _sushiPerBlock,
-        uint256 _startBlock,
-        uint256 _bonusEndBlock
-    ) public {
-        sushi = _sushi;
-        devaddr = _devaddr;
-        sushiPerBlock = _sushiPerBlock;
-        bonusEndBlock = _bonusEndBlock;
-        startBlock = _startBlock;
+        HSFToken hsf_,
+        uint256 totalHsfToDist,
+        uint256 startTime_,
+        uint256 endTime_,
+        uint256 endDistFrac, // scaled by SCALE
+        uint256 maxTimeLock_
+    ) ERC721("HoneyFarm Deposits v1", "HFD") {
+        hsf = hsf_;
+        startTime = startTime_;
+        endTime = endTime_;
+        maxTimeLock = maxTimeLock_;
+        hsf.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
+
+        uint256 totalTime = endTime_.sub(startTime_, "HF: endTime before startTime");
+        // ds = (2 * s) / (te * (r + 1))
+        uint256 startDist_ = totalHsfToDist.mul(2).mul(SCALE).div(
+            totalTime.mul(endDistFrac.add(SCALE))
+        );
+        // -m = ds * (1 - r) / te
+        distSlope = startDist_.mul(SCALE.sub(endDistFrac)).div(
+            totalTime.mul(SCALE)
+        );
+        startDist = startDist_;
     }
 
     function poolLength() external view returns (uint256) {
-        return poolInfo.length;
+        return pools.length();
+    }
+
+    function depositLength() external view returns(uint256) {
+        return depositInfo.length;
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
-    // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(
-        uint256 _allocPoint,
-        IERC20 _lpToken,
-        bool _withUpdate
+        uint256 allocPoint,
+        IERC20 lpToken,
+        bool withUpdate
     ) public onlyOwner {
-        if (_withUpdate) {
+        if (withUpdate) {
             massUpdatePools();
         }
-        uint256 lastRewardBlock =
-            block.number > startBlock ? block.number : startBlock;
-        totalAllocPoint = totalAllocPoint.add(_allocPoint);
-        poolInfo.push(
-            PoolInfo({
-                lpToken: _lpToken,
-                allocPoint: _allocPoint,
-                lastRewardBlock: lastRewardBlock,
-                accSushiPerShare: 0
-            })
-        );
+        uint256 lastRewardTimestamp = Math.max(block.timestamp, startTime);
+        totalAllocPoint = totalAllocPoint.add(allocPoint);
+        require(pools.add(address(lpToken)), "HF: LP pool already exists");
+        poolInfo[lpToken] = PoolInfo({
+            allocPoint: allocPoint,
+            lastRewardTimestamp: lastRewardTimestamp,
+            accHsfPerShare: 0,
+            totalShares: 0
+        });
     }
 
     // Update the given pool's SUSHI allocation point. Can only be called by the owner.
     function set(
-        uint256 _pid,
-        uint256 _allocPoint,
-        bool _withUpdate
+        IERC20 pool,
+        uint256 allocPoint,
+        bool withUpdate
     ) public onlyOwner {
-        if (_withUpdate) {
+        if (withUpdate) {
             massUpdatePools();
         }
-        totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(
-            _allocPoint
+        totalAllocPoint = totalAllocPoint.sub(poolInfo[pool].allocPoint).add(
+            allocPoint
         );
-        poolInfo[_pid].allocPoint = _allocPoint;
+        poolInfo[pool].allocPoint = allocPoint;
     }
 
-    // Set the migrator contract. Can only be called by the owner.
-    function setMigrator(IMigratorChef _migrator) public onlyOwner {
-        migrator = _migrator;
-    }
-
-    // Migrate lp token to another lp contract. Can be called by anyone. We trust that migrator contract is good.
-    function migrate(uint256 _pid) public {
-        require(address(migrator) != address(0), "migrate: no migrator");
-        PoolInfo storage pool = poolInfo[_pid];
-        IERC20 lpToken = pool.lpToken;
-        uint256 bal = lpToken.balanceOf(address(this));
-        lpToken.safeApprove(address(migrator), bal);
-        IERC20 newLpToken = migrator.migrate(lpToken);
-        require(bal == newLpToken.balanceOf(address(this)), "migrate: bad");
-        pool.lpToken = newLpToken;
-    }
-
-    // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(uint256 _from, uint256 _to)
+    // get tokens to be distributed between two timestamps
+    function getDist(uint256 from, uint256 to)
         public
         view
         returns (uint256)
     {
-        if (_to <= bonusEndBlock) {
-            return _to.sub(_from).mul(BONUS_MULTIPLIER);
-        } else if (_from >= bonusEndBlock) {
-            return _to.sub(_from);
-        } else {
-            return
-                bonusEndBlock.sub(_from).mul(BONUS_MULTIPLIER).add(
-                    _to.sub(bonusEndBlock)
-                );
-        }
+        from = Math.max(startTime, from);
+        to = Math.min(to, endTime);
+
+        /*
+           total earned is the distribution formula (m * t + ds) integrated from
+           t1 to t2:
+           (1/2 * m * t2^2 + ds * t2) - (1/2 * m * t1^2 + ds * t1)
+           simplify to (t2 - t1) * (1/2 * m * (t2 + t1) + ds) to reduce
+           arithemtic operations */
+        return from.sub(to).mul(
+            startDist.mul(2).sub(distSlope.mul(from.add(to)))
+        ).div(2);
     }
 
-    // View function to see pending SUSHIs on frontend.
-    function pendingSushi(uint256 _pid, address _user)
+    function getRewardShare
+
+    // View function to see pending HSFs on frontend.
+    function pendingHsf(IERC20 poolToken, uint256 depositId)
         external
         view
         returns (uint256)
     {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][_user];
-        uint256 accSushiPerShare = pool.accSushiPerShare;
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-        if (block.number > pool.lastRewardBlock && lpSupply != 0) {
-            uint256 multiplier =
-                getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 sushiReward =
-                multiplier.mul(sushiPerBlock).mul(pool.allocPoint).div(
-                    totalAllocPoint
-                );
-            accSushiPerShare = accSushiPerShare.add(
-                sushiReward.mul(1e12).div(lpSupply)
+        PoolInfo storage pool = poolInfo[poolToken];
+        DepositInfo storage deposit = depositInfo[depositId];
+        uint256 accHsfPerShare = pool.accHsfPerShare;
+        uint256 lpSupply = poolToken.balanceOf(address(this));
+        if (block.timestamp > pool.lastRewardTimestamp && lpSupply != 0) {
+            uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
+            uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+            accHsfPerShare = accHsfPerShare.add(
+                hsfReward.mul(SCALE).div(lpSupply)
             );
         }
-        return user.amount.mul(accSushiPerShare).div(1e12).sub(user.rewardDebt);
+        return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
+            deposit.rewardDebt
+        );
     }
 
     // Update reward vairables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
-        uint256 length = poolInfo.length;
-        for (uint256 pid = 0; pid < length; ++pid) {
-            updatePool(pid);
+        uint256 length = pools.length();
+        for (uint256 pid = 0; pid < length; pid++) {
+            updatePool(IERC20(pools.at(pid)));
         }
     }
 
     // Update reward variables of the given pool to be up-to-date.
-    function updatePool(uint256 _pid) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        if (block.number <= pool.lastRewardBlock) {
+    function updatePool(IERC20 poolToken) public {
+        PoolInfo storage pool = poolInfo[poolToken];
+        if (block.timestamp <= pool.lastRewardTimestamp) {
             return;
         }
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 lpSupply = poolToken.balanceOf(address(this));
         if (lpSupply == 0) {
-            pool.lastRewardBlock = block.number;
+            pool.lastRewardTimestamp = block.timestamp;
             return;
         }
-        uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 sushiReward =
-            multiplier.mul(sushiPerBlock).mul(pool.allocPoint).div(
-                totalAllocPoint
-            );
-        sushi.mint(devaddr, sushiReward.div(10));
-        sushi.mint(address(this), sushiReward);
-        pool.accSushiPerShare = pool.accSushiPerShare.add(
-            sushiReward.mul(1e12).div(lpSupply)
+        uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
+        uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+        pool.accHsfPerShare = pool.accHsfPerShare.add(
+            hsfReward.mul(SCALE).div(lpSupply)
         );
-        pool.lastRewardBlock = block.number;
+        pool.lastRewardTimestamp = block.timestamp;
     }
 
-    // Deposit LP tokens to MasterChef for SUSHI allocation.
-    function deposit(uint256 _pid, uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
-        updatePool(_pid);
-        if (user.amount > 0) {
-            uint256 pending =
-                user.amount.mul(pool.accSushiPerShare).div(1e12).sub(
-                    user.rewardDebt
-                );
-            safeSushiTransfer(msg.sender, pending);
-        }
+    // Deposit LP tokens into the farm to earn HSF
+    function deposit(
+        IERC20 poolToken,
+        uint256 amount,
+        uint256 unlockTime
+    )
+        public
+    {
+        require(
+            unlockTime == 0 || unlockTime > block.timestamp,
+            "HF: Invalid unlock time"
+        );
+        PoolInfo storage pool = poolInfo[poolToken];
+        updatePool(poolToken);
         pool.lpToken.safeTransferFrom(
             address(msg.sender),
             address(this),
-            _amount
+            amount
         );
-        user.amount = user.amount.add(_amount);
-        user.rewardDebt = user.amount.mul(pool.accSushiPerShare).div(1e12);
+        uint256 newDepositId = totalDeposits++;
+        _safeMint(msg.sender, newDepositId);
+        DepositInfo memory newDeposit = DepositInfo({
+            amount: amount,
+            rewardDebt: amount.mul().div(SCALE),
+            unlockTime: unlockTime,
+
+
+        });
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -257,19 +264,10 @@ contract HoneyFarm is Ownable {
         user.rewardDebt = 0;
     }
 
-    // Safe sushi transfer function, just in case if rounding error causes pool to not have enough SUSHIs.
-    function safeSushiTransfer(address _to, uint256 _amount) internal {
-        uint256 sushiBal = sushi.balanceOf(address(this));
-        if (_amount > sushiBal) {
-            sushi.transfer(_to, sushiBal);
-        } else {
-            sushi.transfer(_to, _amount);
-        }
-    }
-
-    // Update dev address by the previous dev.
-    function dev(address _devaddr) public {
-        require(msg.sender == devaddr, "dev: wut?");
-        devaddr = _devaddr;
+    /* Safe hsf transfer function, just in case if rounding error causes pool
+       to not have enough HSFs.*/
+    function _safeHsfTransfer(address to, uint256 amount) internal {
+        uint256 hsfBal = hsf.balanceOf(address(this));
+        hsf.transfer(to, Math.min(amount, hsfBal));
     }
 }
