@@ -5,7 +5,7 @@
 The HSF being distributed decreases linearly over time. The amount being
 distributed at any time t can be denoted by a function f(t) = m * t + ds
 where m is the slop of the line and ds is the starting distribution rate. If
-$t_e$ is the time at which distribution ends, the distribution rate at the end de
+te is the time at which distribution ends, the distribution rate at the end de
 is f(te). Since we want the distribution rate to decrease over time we'll
 denote de as a percentage r of ds, so de = r * ds. The total HSF to be
 distributed s is the area under the graph between 0 and te. Since it's a
