@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GNU
+// SPDX-License-Identifier: GPL-3.0-only
 
 pragma solidity 0.7.6;
 
@@ -28,8 +28,8 @@ contract HoneyFarm is Ownable, ERC721 {
 
     // Info of each pool.
     struct PoolInfo {
-        uint256 allocPoint; // How many allocation points assigned to this pool. SUSHIs to distribute per block.
-        uint256 lastRewardTimestamp; // Last block number that SUSHIs distribution occurs.
+        uint256 allocPoint; // How many allocation points assigned to this pool.
+        uint256 lastRewardTimestamp; // Last block timestamp that HSFs distribution occured
         uint256 accHsfPerShare; // Accumulated HSFs per share, times SCALE.
         uint256 totalShares; // total shares stored in pool
     }
@@ -48,9 +48,10 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public totalDeposits;
     // data about infdividual deposits
     mapping(uint256 => DepositInfo) public depositInfo;
-    // the negative slope of the distribution line
+    // the negative slope of the distribution line scaled by SCALE, how much
+    // less is being distributed per unit of time.
     uint256 public immutable distSlope;
-    // starting distribution rate / unit time
+    // starting distribution rate / unit time scaled by SCALE
     uint256 public immutable startDist;
     // maximum time someone can lock their liquidity for
     uint256 public immutable maxTimeLock;
@@ -58,6 +59,8 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public immutable startTime;
     // time at which coins finish being distributed
     uint256 public immutable endTime;
+    // multiplier for time locked deposits
+    uint256 public immutable timeLockMultiplier;
     // whether this contract has been disabled
     bool public contractDisabled;
 
@@ -66,18 +69,27 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 totalHsfToDist,
         uint256 startTime_,
         uint256 endTime_,
-        uint256 endDistFrac, // scaled by SCALE
-        uint256 maxTimeLock_
+        /* End distribution fraction:
+           represents how much less tokens to distribute at the end vs the
+           beginning scaled by SCALE. If it's 0.2 * SCALE then 80% less tokens
+           will be distributed per unit of time at the end vs beginning */
+        uint256 endDistFrac,
+        uint256 maxTimeLock_,
+        uint256 timeLockMultiplier_ // scaled by SCALE
     ) ERC721("HoneyFarm Deposits v1", "HFD") {
         hsf = hsf_;
         startTime = startTime_;
         endTime = endTime_;
         maxTimeLock = maxTimeLock_;
+        timeLockMultiplier = timeLockMultiplier_;
         hsf_.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
 
         uint256 totalTime = endTime_.sub(startTime_, "HF: endTime before startTime");
+
+        /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
+           the maths */
         // ds = (2 * s) / (te * (r + 1))
-        uint256 startDist_ = totalHsfToDist.mul(2).mul(SCALE).div(
+        uint256 startDist_ = totalHsfToDist.mul(2).mul(SCALE).mul(SCALE).div(
             totalTime.mul(endDistFrac.add(SCALE))
         );
         // -m = ds * (1 - r) / te
@@ -111,7 +123,7 @@ contract HoneyFarm is Ownable, ERC721 {
     function disableContract(address tokenRecipient) external onlyOwner {
         massUpdatePools();
         uint256 remainingTokens = getDist(block.timestamp, endTime);
-        _safeHsfTransfer(tokenRecipient, remainingTokens);
+        _safeHsfTransfer(tokenRecipient, remainingTokens.div(SCALE));
         contractDisabled = true;
     }
 
@@ -150,7 +162,7 @@ contract HoneyFarm is Ownable, ERC721 {
         poolInfo[pool].allocPoint = allocPoint;
     }
 
-    // get tokens to be distributed between two timestamps
+    // get tokens to be distributed between two timestamps scaled by SCALE
     function getDist(uint256 from, uint256 to)
         public
         view
@@ -161,19 +173,20 @@ contract HoneyFarm is Ownable, ERC721 {
 
         if (from > to) return 0;
 
-        /*
-           total earned is the distribution formula (m * t + ds) integrated from
-           t1 (from) to t2 (to):
-           (1/2 * m * t2^2 + ds * t2) - (1/2 * m * t1^2 + ds * t1)
-           simplify to (t2 - t1) * (1/2 * m * (t2 + t1) + ds) to reduce
-           arithemtic operations */
-        return from.sub(to).mul(
+        from = from.sub(startTime);
+        to = to.sub(startTime);
+
+        /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
+           the maths */
+        // d(t1, t2) = (t2 - t1) * (2 * ds - (-m) * (t2 + t1)) / 2
+        return to.sub(from).mul(
             startDist.mul(2).sub(distSlope.mul(from.add(to)))
         ).div(2);
     }
 
-    function getTimeMultiple(uint256) public view returns(uint256) {
-        return 1;
+    function getTimeMultiple(uint256 unlockTime) public view returns(uint256) {
+        if (unlockTime == 0) return SCALE;
+        return unlockTime.sub(block.timestamp).mul(timeLockMultiplier).add(SCALE);
     }
 
     // View function to see pending HSFs on frontend.
@@ -189,9 +202,7 @@ contract HoneyFarm is Ownable, ERC721 {
         if (block.timestamp > pool.lastRewardTimestamp && totalShares != 0) {
             uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
             uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-            accHsfPerShare = accHsfPerShare.add(
-                hsfReward.mul(SCALE).div(totalShares)
-            );
+            accHsfPerShare = accHsfPerShare.add(hsfReward.div(totalShares));
         }
         return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
             deposit.rewardDebt
@@ -219,9 +230,7 @@ contract HoneyFarm is Ownable, ERC721 {
         }
         uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
         uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-        pool.accHsfPerShare = pool.accHsfPerShare.add(
-            hsfReward.mul(SCALE).div(totalShares)
-        );
+        pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
         pool.lastRewardTimestamp = block.timestamp;
     }
 
@@ -238,6 +247,10 @@ contract HoneyFarm is Ownable, ERC721 {
             "HF: Invalid unlock time"
         );
         require(_pools.contains(address(poolToken)), "HF: Non-existant pool");
+        require(
+            unlockTime == 0 || unlockTime.sub(block.timestamp) <= maxTimeLock,
+            "HF: Lock time exceeds maximum"
+        );
         PoolInfo storage pool = poolInfo[poolToken];
         updatePool(poolToken);
         poolToken.safeTransferFrom(
@@ -246,7 +259,7 @@ contract HoneyFarm is Ownable, ERC721 {
             amount
         );
         uint256 newDepositId = totalDeposits++;
-        uint256 newShares = amount.mul(getTimeMultiple(unlockTime));
+        uint256 newShares = amount.mul(getTimeMultiple(unlockTime)).div(SCALE);
         pool.totalShares = pool.totalShares.add(newShares);
         depositInfo[newDepositId] = DepositInfo({
             amount: amount,
@@ -277,9 +290,9 @@ contract HoneyFarm is Ownable, ERC721 {
                 deposit.rewardDebt
             );
 
+        _burn(depositId);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
-        _burn(depositId);
     }
 
     /* Safe hsf transfer function, just in case if rounding error causes pool
