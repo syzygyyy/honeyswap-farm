@@ -270,6 +270,7 @@ contract HoneyFarm is Ownable, ERC721 {
                 deposit.rewardDebt
             );
 
+        pool.totalShares = pool.totalShares.sub(deposit.rewardShare);
         _burn(depositId);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
