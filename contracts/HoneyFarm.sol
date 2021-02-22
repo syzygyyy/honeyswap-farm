@@ -59,8 +59,10 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public immutable startTime;
     // time at which coins finish being distributed
     uint256 public immutable endTime;
-    // multiplier for time locked deposits
+    // multiplier for time locked deposits / second locked scaled by SCALE
     uint256 public immutable timeLockMultiplier;
+    // constant added to the timeLockMultiplier scaled by SCALE
+    uint256 public immutable timeLockConstant;
     // whether this contract has been disabled
     bool public contractDisabled;
 
@@ -75,26 +77,27 @@ contract HoneyFarm is Ownable, ERC721 {
            will be distributed per unit of time at the end vs beginning */
         uint256 endDistFrac,
         uint256 maxTimeLock_,
-        uint256 timeLockMultiplier_ // scaled by SCALE
+        uint256 timeLockMultiplier_,
+        uint256 timeLockConstant_
     ) ERC721("HoneyFarm Deposits v1", "HFD") {
+        require(endTime_ > startTime_, "HF: endTime before startTime");
         hsf = hsf_;
         startTime = startTime_;
         endTime = endTime_;
         maxTimeLock = maxTimeLock_;
         timeLockMultiplier = timeLockMultiplier_;
+        timeLockConstant = timeLockConstant_;
         hsf_.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
-
-        uint256 totalTime = endTime_.sub(startTime_, "HF: endTime before startTime");
 
         /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
            the maths */
         // ds = (2 * s) / (te * (r + 1))
         uint256 startDist_ = totalHsfToDist.mul(2).mul(SCALE).mul(SCALE).div(
-            totalTime.mul(endDistFrac.add(SCALE))
+            (endTime_ - startTime_).mul(endDistFrac.add(SCALE))
         );
         // -m = ds * (1 - r) / te
         distSlope = startDist_.mul(SCALE.sub(endDistFrac)).div(
-            totalTime.mul(SCALE)
+            (endTime_ - startTime_).mul(SCALE)
         );
         startDist = startDist_;
     }
@@ -186,17 +189,18 @@ contract HoneyFarm is Ownable, ERC721 {
 
     function getTimeMultiple(uint256 unlockTime) public view returns(uint256) {
         if (unlockTime == 0) return SCALE;
-        return unlockTime.sub(block.timestamp).mul(timeLockMultiplier).add(SCALE);
+        uint256 timeDelta = unlockTime.sub(block.timestamp);
+        return timeDelta.mul(timeLockMultiplier).add(timeLockConstant);
     }
 
     // View function to see pending HSFs on frontend.
-    function pendingHsf(IERC20 poolToken, uint256 depositId)
+    function pendingHsf(uint256 depositId)
         external
         view
         returns (uint256)
     {
-        PoolInfo storage pool = poolInfo[poolToken];
         DepositInfo storage deposit = depositInfo[depositId];
+        PoolInfo storage pool = poolInfo[deposit.pool];
         uint256 accHsfPerShare = pool.accHsfPerShare;
         uint256 totalShares = pool.totalShares;
         if (block.timestamp > pool.lastRewardTimestamp && totalShares != 0) {
@@ -209,39 +213,15 @@ contract HoneyFarm is Ownable, ERC721 {
         );
     }
 
-    // Update reward vairables for all pools. Be careful of gas spending!
-    function massUpdatePools() public {
-        uint256 length = _pools.length();
-        for (uint256 pid = 0; pid < length; pid++) {
-            updatePool(IERC20(_pools.at(pid)));
-        }
-    }
-
-    // Update reward variables of the given pool to be up-to-date.
-    function updatePool(IERC20 poolToken) public {
-        PoolInfo storage pool = poolInfo[poolToken];
-        if (block.timestamp <= pool.lastRewardTimestamp) {
-            return;
-        }
-        uint256 totalShares = pool.totalShares;
-        if (totalShares == 0) {
-            pool.lastRewardTimestamp = block.timestamp;
-            return;
-        }
-        uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
-        uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-        pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
-        pool.lastRewardTimestamp = block.timestamp;
-    }
-
     // Deposit LP tokens into the farm to earn HSF
     function createDeposit(
         IERC20 poolToken,
         uint256 amount,
         uint256 unlockTime
     )
-        public
+        external
     {
+        require(!contractDisabled, "HF: Cannot deposit into disabled");
         require(
             unlockTime == 0 || unlockTime > block.timestamp,
             "HF: Invalid unlock time"
@@ -271,8 +251,8 @@ contract HoneyFarm is Ownable, ERC721 {
         _safeMint(msg.sender, newDepositId);
     }
 
-    // Withdraw LP tokens from MasterChef.
-    function closeDeposit(uint256 depositId) public {
+    // Withdraw LP tokens from HoneyFarm along with reward
+    function closeDeposit(uint256 depositId) external {
         require(ownerOf(depositId) == msg.sender, "HF: Must be owner to withdraw");
         DepositInfo storage deposit = depositInfo[depositId];
         require(
@@ -293,6 +273,31 @@ contract HoneyFarm is Ownable, ERC721 {
         _burn(depositId);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
+    }
+
+    // Update reward vairables for all pools. Be careful of gas spending!
+    function massUpdatePools() public {
+        uint256 length = _pools.length();
+        for (uint256 pid = 0; pid < length; pid++) {
+            updatePool(IERC20(_pools.at(pid)));
+        }
+    }
+
+    // Update reward variables of the given pool to be up-to-date.
+    function updatePool(IERC20 poolToken) public {
+        PoolInfo storage pool = poolInfo[poolToken];
+        if (block.timestamp <= pool.lastRewardTimestamp) {
+            return;
+        }
+        uint256 totalShares = pool.totalShares;
+        if (totalShares == 0) {
+            pool.lastRewardTimestamp = block.timestamp;
+            return;
+        }
+        uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
+        uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+        pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
+        pool.lastRewardTimestamp = block.timestamp;
     }
 
     /* Safe hsf transfer function, just in case if rounding error causes pool
