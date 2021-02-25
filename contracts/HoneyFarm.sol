@@ -25,6 +25,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 rewardShare;
         uint256 setRewards;
         IERC20 pool;
+        address referrer;
     }
 
     // Info of each pool.
@@ -71,6 +72,7 @@ contract HoneyFarm is Ownable, ERC721 {
     event PoolUpdated(IERC20 indexed poolToken, uint256 allocPoint);
     event Disabled();
     event DepositDowngraded(uint256 depositId);
+    event Referred(address indexed referrer, uint256 depositId);
 
     constructor(
         IERC20 hsf_,
@@ -228,7 +230,8 @@ contract HoneyFarm is Ownable, ERC721 {
     function createDeposit(
         IERC20 poolToken,
         uint256 amount,
-        uint256 unlockTime
+        uint256 unlockTime,
+        address referrer
     )
         external notDisabled
     {
@@ -252,8 +255,13 @@ contract HoneyFarm is Ownable, ERC721 {
         DepositInfo storage newDeposit = depositInfo[newDepositId];
         newDeposit.amount = amount;
         newDeposit.pool = poolToken;
+        newDeposit.referrer = referrer;
         _resetRewardAccs(newDeposit, pool, amount, unlockTime);
         _safeMint(msg.sender, newDepositId);
+
+        if (referrer != address(0)) {
+            emit Referred(referrer, newDepositId);
+        }
     }
 
     function downgradeExpired(uint256 depositId) external {
