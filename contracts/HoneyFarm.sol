@@ -23,6 +23,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 rewardDebt; // Reward debt (value of accumulator)
         uint256 unlockTime;
         uint256 rewardShare;
+        uint256 setRewards;
         IERC20 pool;
     }
 
@@ -66,6 +67,11 @@ contract HoneyFarm is Ownable, ERC721 {
     // whether this contract has been disabled
     bool public contractDisabled;
 
+    event PoolAdded(IERC20 indexed poolToken, uint256 allocPoint);
+    event PoolUpdated(IERC20 indexed poolToken, uint256 allocPoint);
+    event Disabled();
+    event DepositDowngraded(uint256 depositId);
+
     constructor(
         IERC20 hsf_,
         uint256 totalHsfToDist,
@@ -102,6 +108,11 @@ contract HoneyFarm is Ownable, ERC721 {
         startDist = startDist_;
     }
 
+    modifier notDisabled {
+        require(!contractDisabled, "HF: Contract already disabled");
+        _;
+    }
+
     function poolLength() external view returns (uint256) {
         return _pools.length();
     }
@@ -110,24 +121,31 @@ contract HoneyFarm is Ownable, ERC721 {
         external
         view
         returns(
+            IERC20 poolToken,
             uint256 allocPoint,
             uint256 lastRewardTimestamp,
             uint256 accHsfPerShare,
             uint256 totalShares
         )
     {
-        PoolInfo storage pool = poolInfo[IERC20(_pools.at(index))];
+        poolToken = IERC20(_pools.at(index));
+        PoolInfo storage pool = poolInfo[poolToken];
         allocPoint = pool.allocPoint;
         lastRewardTimestamp = pool.lastRewardTimestamp;
         accHsfPerShare = pool.accHsfPerShare;
         totalShares = pool.totalShares;
     }
 
-    function disableContract(address tokenRecipient) external onlyOwner {
+    function disableContract(address tokenRecipient)
+        external
+        onlyOwner
+        notDisabled
+    {
         massUpdatePools();
         uint256 remainingTokens = getDist(block.timestamp, endTime);
         _safeHsfTransfer(tokenRecipient, remainingTokens.div(SCALE));
         contractDisabled = true;
+        emit Disabled();
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
@@ -135,7 +153,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 allocPoint,
         IERC20 lpToken,
         bool withUpdate
-    ) public onlyOwner {
+    ) public onlyOwner notDisabled {
         if (withUpdate) {
             massUpdatePools();
         }
@@ -148,21 +166,23 @@ contract HoneyFarm is Ownable, ERC721 {
             accHsfPerShare: 0,
             totalShares: 0
         });
+        emit PoolAdded(lpToken, allocPoint);
     }
 
     // Update the given pool's SUSHI allocation point. Can only be called by the owner.
     function set(
-        IERC20 pool,
+        IERC20 poolToken,
         uint256 allocPoint,
         bool withUpdate
-    ) public onlyOwner {
+    ) public onlyOwner notDisabled {
         if (withUpdate) {
             massUpdatePools();
         }
-        totalAllocPoint = totalAllocPoint.sub(poolInfo[pool].allocPoint).add(
+        totalAllocPoint = totalAllocPoint.sub(poolInfo[poolToken].allocPoint).add(
             allocPoint
         );
-        poolInfo[pool].allocPoint = allocPoint;
+        poolInfo[poolToken].allocPoint = allocPoint;
+        emit PoolUpdated(poolToken, allocPoint);
     }
 
     // get tokens to be distributed between two timestamps scaled by SCALE
@@ -201,16 +221,7 @@ contract HoneyFarm is Ownable, ERC721 {
     {
         DepositInfo storage deposit = depositInfo[depositId];
         PoolInfo storage pool = poolInfo[deposit.pool];
-        uint256 accHsfPerShare = pool.accHsfPerShare;
-        uint256 totalShares = pool.totalShares;
-        if (block.timestamp > pool.lastRewardTimestamp && totalShares != 0) {
-            uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
-            uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-            accHsfPerShare = accHsfPerShare.add(hsfReward.div(totalShares));
-        }
-        return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
-            deposit.rewardDebt
-        );
+        return _getPendingHsf(deposit, pool);
     }
 
     // Deposit LP tokens into the farm to earn HSF
@@ -219,9 +230,8 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 amount,
         uint256 unlockTime
     )
-        external
+        external notDisabled
     {
-        require(!contractDisabled, "HF: Cannot deposit into disabled");
         require(
             unlockTime == 0 || unlockTime > block.timestamp,
             "HF: Invalid unlock time"
@@ -239,16 +249,26 @@ contract HoneyFarm is Ownable, ERC721 {
             amount
         );
         uint256 newDepositId = totalDeposits++;
-        uint256 newShares = amount.mul(getTimeMultiple(unlockTime)).div(SCALE);
-        pool.totalShares = pool.totalShares.add(newShares);
-        depositInfo[newDepositId] = DepositInfo({
-            amount: amount,
-            rewardDebt: amount.mul(pool.accHsfPerShare).div(SCALE),
-            unlockTime: unlockTime,
-            rewardShare: newShares,
-            pool: poolToken
-        });
+        DepositInfo storage newDeposit = depositInfo[newDepositId];
+        newDeposit.amount = amount;
+        newDeposit.pool = poolToken;
+        _resetRewardAccs(newDeposit, pool, amount, unlockTime);
         _safeMint(msg.sender, newDepositId);
+    }
+
+    function downgradeExpired(uint256 depositId) external {
+        DepositInfo storage deposit = depositInfo[depositId];
+        require(deposit.unlockTime > 0, "HF: no lock to expire");
+        require(
+            deposit.unlockTime <= block.timestamp,
+            "HF: deposit has not expired yet"
+        );
+        IERC20 poolToken = deposit.pool;
+        PoolInfo storage pool = poolInfo[poolToken];
+        updatePool(poolToken);
+        deposit.setRewards = _getPendingHsf(deposit, pool);
+        _resetRewardAccs(deposit, pool, deposit.amount, 0);
+        emit DepositDowngraded(depositId);
     }
 
     // Withdraw LP tokens from HoneyFarm along with reward
@@ -265,11 +285,7 @@ contract HoneyFarm is Ownable, ERC721 {
         PoolInfo storage pool = poolInfo[poolToken];
         updatePool(poolToken);
 
-        uint256 pending =
-            deposit.rewardShare.mul(pool.accHsfPerShare).div(SCALE).sub(
-                deposit.rewardDebt
-            );
-
+        uint256 pending = _getPendingHsf(deposit, pool);
         pool.totalShares = pool.totalShares.sub(deposit.rewardShare);
         _burn(depositId);
         _safeHsfTransfer(msg.sender, pending);
@@ -299,6 +315,41 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
         pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
         pool.lastRewardTimestamp = block.timestamp;
+    }
+
+    function _getPendingHsf(
+        DepositInfo storage deposit,
+        PoolInfo storage pool
+    )
+        internal
+        view
+        returns(uint256)
+    {
+        uint256 accHsfPerShare = pool.accHsfPerShare;
+        uint256 totalShares = pool.totalShares;
+        if (block.timestamp > pool.lastRewardTimestamp && totalShares != 0) {
+            uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
+            uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+            accHsfPerShare = accHsfPerShare.add(hsfReward.div(totalShares));
+        }
+        return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
+            deposit.rewardDebt
+        );
+    }
+
+    function _resetRewardAccs(
+        DepositInfo storage deposit,
+        PoolInfo storage pool,
+        uint256 amount,
+        uint256 unlockTime
+    )
+        internal
+    {
+        deposit.rewardDebt = amount.mul(pool.accHsfPerShare).div(SCALE);
+        deposit.unlockTime = unlockTime;
+        uint256 newShares = amount.mul(getTimeMultiple(unlockTime)).div(SCALE);
+        pool.totalShares = pool.totalShares.sub(deposit.rewardShare).add(newShares);
+        deposit.rewardShare = newShares;
     }
 
     /* Safe hsf transfer function, just in case if rounding error causes pool
