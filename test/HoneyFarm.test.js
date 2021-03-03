@@ -8,7 +8,8 @@ const {
   getDetAddr,
   ZERO,
   trackBalance,
-  expectEqualWithinFraction
+  expectEqualWithinFraction,
+  bnE
 } = require('./utils')
 const { expect } = require('chai')
 const BN = require('bn.js')
@@ -73,6 +74,62 @@ describe('HoneyFarm', () => {
     expect(pool.totalShares).to.be.bignumber.equal(ZERO)
     expect(pool.lastRewardTimestamp).to.be.bignumber.equal(await this.farm.startTime())
   })
+  it('updates pool correctly when entering and exiting', async () => {
+    await expectRevert(this.farm.getPoolByIndex(new BN('0')), 'EnumerableSet: index out of bounds')
+    const beforeAddPoolInfo = await this.farm.poolInfo(this.lpToken1.address)
+    expect(beforeAddPoolInfo.allocPoint).to.be.bignumber.equal(ZERO)
+    expect(beforeAddPoolInfo.lastRewardTimestamp).to.be.bignumber.equal(ZERO)
+    expect(beforeAddPoolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
+    expect(beforeAddPoolInfo.totalShares).to.be.bignumber.equal(ZERO)
+
+    const allocPoint = new BN('20')
+    const poolToken = this.lpToken1.address
+    const receipt = await this.farm.add(allocPoint, poolToken, true, {
+      from: admin1
+    })
+    expectEvent(receipt, 'PoolAdded', { poolToken, allocPoint })
+    await expectRevert(
+      this.farm.add(new BN('30'), this.lpToken1.address, true, { from: admin1 }),
+      'HF: LP pool already exists'
+    )
+
+    const startTime = await this.farm.startTime()
+    let poolInfo = await this.farm.poolInfo(this.lpToken1.address)
+    expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+    expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
+    expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
+    expect(poolInfo.totalShares).to.be.bignumber.equal(ZERO)
+
+    await this.lpToken1.mint(user1, ether('60'))
+    await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })
+    const deposit1 = ether('30')
+    await this.farm.createDeposit(this.lpToken1.address, deposit1, ZERO, ZERO_ADDRESS, {
+      from: user1
+    })
+
+    poolInfo = await this.farm.poolInfo(this.lpToken1.address)
+    expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+    expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
+    expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
+    expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1)
+
+    const deposit2 = ether('20')
+    await this.farm.createDeposit(this.lpToken1.address, deposit2, ZERO, ZERO_ADDRESS, {
+      from: user1
+    })
+
+    poolInfo = await this.farm.poolInfo(this.lpToken1.address)
+    expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+    expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
+    expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
+    expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
+
+    const skipTo = startTime.add(time.duration.days(2))
+    await time.increaseTo(skipTo)
+    const expectedRewardPerShare = (await this.farm.getDist(startTime, skipTo)).div(
+      deposit1.add(deposit2)
+    )
+  })
   it('can deposit LP tokens', async () => {
     expect(await this.farm.totalDeposits()).to.be.bignumber.equal(ZERO)
 
@@ -86,9 +143,13 @@ describe('HoneyFarm', () => {
     const farmlp1 = await trackBalance(this.lpToken1, this.farm.address)
 
     const depositAmount1 = ether('21')
-    let receipt = await this.farm.createDeposit(this.lpToken1.address, depositAmount1, ZERO, {
-      from: user1
-    })
+    let receipt = await this.farm.createDeposit(
+      this.lpToken1.address,
+      depositAmount1,
+      ZERO,
+      ZERO_ADDRESS,
+      { from: user1 }
+    )
     expect(await user1lp1.delta()).to.be.bignumber.equal(depositAmount1.neg())
     expect(await farmlp1.delta()).to.be.bignumber.equal(depositAmount1)
     expect(await this.farm.totalDeposits()).to.be.bignumber.equal(new BN('1'))
@@ -105,9 +166,13 @@ describe('HoneyFarm', () => {
     expect(depositInfo1.unlockTime).to.be.bignumber.equal(ZERO)
 
     const depositAmount2 = ether('11')
-    receipt = await this.farm.createDeposit(this.lpToken1.address, depositAmount2, ZERO, {
-      from: user1
-    })
+    receipt = await this.farm.createDeposit(
+      this.lpToken1.address,
+      depositAmount2,
+      ZERO,
+      ZERO_ADDRESS,
+      { from: user1 }
+    )
     expect(await user1lp1.delta()).to.be.bignumber.equal(depositAmount2.neg())
     expect(await farmlp1.delta()).to.be.bignumber.equal(depositAmount2)
     expect(await this.farm.totalDeposits()).to.be.bignumber.equal(new BN('2'))
@@ -137,14 +202,16 @@ describe('HoneyFarm', () => {
     const user2lpTracker = await trackBalance(this.lpToken1, user2)
 
     const depositAmount = ether('34')
-    await this.farm.createDeposit(this.lpToken1.address, depositAmount, ZERO, { from: user1 })
+    await this.farm.createDeposit(this.lpToken1.address, depositAmount, ZERO, ZERO_ADDRESS, {
+      from: user1
+    })
     const expectedDepositId = new BN('0')
     expect(await this.farm.ownerOf(expectedDepositId)).to.equal(user1)
 
-    await time.increaseTo(await this.farm.startTime())
+    await time.increaseTo((await this.farm.startTime()).sub(time.duration.minutes(1)))
 
     let pendingHsf = await this.farm.pendingHsf(expectedDepositId)
-    expect(pendingHsf).to.be.bignumber.equal(ZERO)
+    expect(pendingHsf).to.be.bignumber.equal(ZERO, 'Initial pending HSF should be 0')
 
     await time.increaseTo(await this.farm.endTime())
     pendingHsf = await this.farm.pendingHsf(expectedDepositId)
@@ -160,8 +227,14 @@ describe('HoneyFarm', () => {
 
     receipt = await this.farm.closeDeposit(expectedDepositId, { from: user2 })
     expectEvent(receipt, 'Transfer', { from: user2, to: ZERO_ADDRESS, tokenId: expectedDepositId })
-    expect(await user2hsfTracker.delta()).to.be.bignumber.equal(pendingHsf)
-    expect(await user2lpTracker.delta()).to.be.bignumber.equal(depositAmount)
+    expect(await user2hsfTracker.delta()).to.be.bignumber.equal(
+      pendingHsf,
+      'Withdrawer is expected to be accredited the pending rewards'
+    )
+    expect(await user2lpTracker.delta()).to.be.bignumber.equal(
+      depositAmount,
+      'Withdrawer is expected to retrieve his LP tokens'
+    )
     await expectRevert(
       this.farm.ownerOf(expectedDepositId),
       'ERC721: owner query for nonexistent token'
@@ -182,14 +255,26 @@ describe('HoneyFarm', () => {
     await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user2 })
     const user2Tracker = await trackBalance(this.farmToken, user2)
 
-    let receipt = await this.farm.createDeposit(this.lpToken1.address, mintAmount1, ZERO, {
-      from: user1
-    })
+    let receipt = await this.farm.createDeposit(
+      this.lpToken1.address,
+      mintAmount1,
+      ZERO,
+      ZERO_ADDRESS,
+      {
+        from: user1
+      }
+    )
     expectEvent(receipt, 'Transfer', { from: ZERO_ADDRESS, to: user1, tokenId: new BN('0') })
 
-    receipt = await this.farm.createDeposit(this.lpToken1.address, mintAmount2, ZERO, {
-      from: user2
-    })
+    receipt = await this.farm.createDeposit(
+      this.lpToken1.address,
+      mintAmount2,
+      ZERO,
+      ZERO_ADDRESS,
+      {
+        from: user2
+      }
+    )
     expectEvent(receipt, 'Transfer', { from: ZERO_ADDRESS, to: user2, tokenId: new BN('1') })
 
     await time.increaseTo(await this.farm.endTime())
@@ -227,20 +312,30 @@ describe('HoneyFarm', () => {
     await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user2 })
     const user2Tracker = await trackBalance(this.farmToken, user2)
 
-    await this.farm.createDeposit(this.lpToken1.address, mintAmount1, ZERO, { from: user1 })
+    await this.farm.createDeposit(this.lpToken1.address, mintAmount1, ZERO, ZERO_ADDRESS, {
+      from: user1
+    })
 
     const third = this.totalTime.div(new BN('3'))
     const startTime = await this.farm.startTime()
 
     await time.increaseTo(startTime.add(third))
-    await this.farm.createDeposit(this.lpToken1.address, mintAmount2, ZERO, { from: user2 })
+    await this.farm.createDeposit(this.lpToken1.address, mintAmount2, ZERO, ZERO_ADDRESS, {
+      from: user2
+    })
 
     const depositInfo2 = await this.farm.depositInfo(new BN('1'))
     expect(depositInfo2.amount).to.be.bignumber.equal(mintAmount2)
     expect(depositInfo2.rewardShare).to.be.bignumber.equal(mintAmount2)
     const firstThirdDist = await this.farm.getDist(startTime, startTime.add(third))
     const convDebt = depositInfo2.rewardDebt.mul(mintAmount1).div(mintAmount2)
-    expectEqualWithinFraction(convDebt, firstThirdDist.div(this.SCALE), new BN('1'), ether('1'))
+    expectEqualWithinFraction(
+      convDebt,
+      firstThirdDist.div(this.SCALE),
+      new BN('1'),
+      bnE('1', '6'),
+      'Reward debt doesn\'t displace accrued total rewards'
+    )
 
     const twoThirdsTime = startTime.add(third).add(third)
     await time.increaseTo(twoThirdsTime)
@@ -252,7 +347,8 @@ describe('HoneyFarm', () => {
       await user2Tracker.delta(),
       user2Share.div(this.SCALE),
       new BN('1'),
-      ether('1')
+      bnE('1', '6'),
+      'User withdrawing inbetween didn\'t receive expected reward'
     )
 
     const endTime = await this.farm.endTime()
@@ -264,7 +360,8 @@ describe('HoneyFarm', () => {
       await user1Tracker.delta(),
       firstThirdDist.add(user1MiddleShare).add(lastThirdDist).div(this.SCALE),
       new BN('1'),
-      ether('1')
+      bnE('1', '6'),
+      'Last user didn\'t receive remaining rewards'
     )
   })
 })
