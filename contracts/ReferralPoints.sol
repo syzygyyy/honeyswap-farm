@@ -2,30 +2,25 @@
 pragma solidity ^0.7.6;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 
-contract ReferralPoints is ERC20, ERC20Burnable {
+contract ReferralPoints is ERC20, Ownable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    Ownable public immutable owner;
     EnumerableSet.AddressSet internal _trustedBurners;
 
     event BurnerAdded(address indexed newBurner);
     event BurnerRemoved(address indexed prevBurner);
 
-    constructor() ERC20("Honey Referral Points", "HRP") {
-        owner = Ownable(msg.sender);
-    }
+    constructor() ERC20("Honey Referral Points", "HRP") Ownable() { }
 
     modifier onlyMetaOwner {
-        require(msg.sender == owner.owner(), "HRP: Not meta owner");
+        require(msg.sender == Ownable(owner()).owner(), "HRP: Not meta owner");
         _;
     }
 
-    function mint(address recipient, uint256 amount) external {
-        require(msg.sender == address(owner), "HRP: Only direct owner may mint");
+    function mint(address recipient, uint256 amount) external onlyOwner {
         _mint(recipient, amount);
     }
 

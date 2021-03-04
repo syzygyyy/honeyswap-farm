@@ -42,7 +42,7 @@ contract HoneyFarm is Ownable, ERC721 {
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
     // referral points token to keep track of referrals
-    ReferralPoints public immutable referralPoints;
+    ReferralPoints public referralPoints;
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
@@ -99,7 +99,6 @@ contract HoneyFarm is Ownable, ERC721 {
         timeLockMultiplier = timeLockMultiplier_;
         timeLockConstant = timeLockConstant_;
         hsf_.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
-        referralPoints = new ReferralPoints();
 
         /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
            the maths */
@@ -160,6 +159,7 @@ contract HoneyFarm is Ownable, ERC721 {
         IERC20 lpToken,
         bool withUpdate
     ) public onlyOwner notDisabled {
+        require(address(referralPoints) != address(0), "HF: HRP not setup yet");
         if (withUpdate) {
             massUpdatePools();
         }
@@ -300,9 +300,18 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 pending = _getPendingHsf(deposit, pool);
         pool.totalShares = pool.totalShares.sub(deposit.rewardShare);
         _burn(depositId);
-        referralPoints.mint(deposit.referrer, pending);
+        _rewardReferrer(deposit.referrer, pending);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
+    }
+
+    function setReferralPoints(address referralPoints_) external onlyOwner {
+        require(address(referralPoints) == address(0), "HF: HRP already set");
+        require(
+            Ownable(referralPoints_).owner() == address(this),
+            "HF: Not yet owner of HRP"
+        );
+        referralPoints = ReferralPoints(referralPoints_);
     }
 
     // Update reward vairables for all pools. Be careful of gas spending!
@@ -328,6 +337,12 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
         pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
         pool.lastRewardTimestamp = block.timestamp;
+    }
+
+    function _rewardReferrer(address referrer, uint256 reward) internal {
+        if (referrer != address(0)) {
+            referralPoints.mint(referrer, reward);
+        }
     }
 
     function _getPendingHsf(

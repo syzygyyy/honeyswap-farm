@@ -18,6 +18,7 @@ const [admin1, user1, user2] = accounts
 
 const HoneyFarm = contract.fromArtifact('HoneyFarm')
 const HSFToken = contract.fromArtifact('HSFToken')
+const ReferralPoints = contract.fromArtifact('ReferralPoints')
 const TestERC20 = contract.fromArtifact('TestERC20')
 
 describe('HoneyFarm', () => {
@@ -47,6 +48,10 @@ describe('HoneyFarm', () => {
       { from: admin1 }
     )
     expect(await this.farmToken.balanceOf(this.farm.address)).to.be.bignumber.equal(this.totalDist)
+    this.referralPoints = await ReferralPoints.new({ from: admin1 })
+    await this.referralPoints.transferOwnership(this.farm.address, { from: admin1 })
+    await this.farm.setReferralPoints(this.referralPoints.address, { from: admin1 })
+
     this.SCALE = await this.farm.SCALE()
 
     this.lpToken1 = await TestERC20.new()
