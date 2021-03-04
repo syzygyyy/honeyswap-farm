@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./ReferralPoints.sol";
 
 
 // Forked from sushiswap's MasterChef contract
@@ -40,6 +41,8 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public constant SCALE = 1 ether;
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
+    // referral points token to keep track of referrals
+    ReferralPoints public immutable referralPoints;
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
@@ -96,6 +99,7 @@ contract HoneyFarm is Ownable, ERC721 {
         timeLockMultiplier = timeLockMultiplier_;
         timeLockConstant = timeLockConstant_;
         hsf_.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
+        referralPoints = new ReferralPoints();
 
         /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
            the maths */
@@ -296,6 +300,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 pending = _getPendingHsf(deposit, pool);
         pool.totalShares = pool.totalShares.sub(deposit.rewardShare);
         _burn(depositId);
+        referralPoints.mint(deposit.referrer, pending);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
     }
@@ -342,7 +347,7 @@ contract HoneyFarm is Ownable, ERC721 {
         }
         return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
             deposit.rewardDebt
-        );
+        ).add(deposit.setRewards);
     }
 
     function _resetRewardAccs(
