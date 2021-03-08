@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./ReferralPoints.sol";
+import "./ReferralRewarder.sol";
 
 
 // Forked from sushiswap's MasterChef contract
@@ -42,7 +42,7 @@ contract HoneyFarm is Ownable, ERC721 {
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
     // referral points token to keep track of referrals
-    ReferralPoints public referralPoints;
+    ReferralRewarder public referralRewarder;
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
@@ -159,7 +159,10 @@ contract HoneyFarm is Ownable, ERC721 {
         IERC20 lpToken,
         bool withUpdate
     ) public onlyOwner notDisabled {
-        require(address(referralPoints) != address(0), "HF: HRP not setup yet");
+        require(
+            address(referralRewarder) != address(0),
+            "HF: Referral not setup yet"
+        );
         if (withUpdate) {
             massUpdatePools();
         }
@@ -305,13 +308,13 @@ contract HoneyFarm is Ownable, ERC721 {
         poolToken.safeTransfer(msg.sender, deposit.amount);
     }
 
-    function setReferralPoints(address referralPoints_) external onlyOwner {
-        require(address(referralPoints) == address(0), "HF: HRP already set");
+    function setReferralRewarder(address referralRewarder_) external onlyOwner {
+        require(address(referralRewarder) == address(0), "HF: HRP already set");
         require(
-            Ownable(referralPoints_).owner() == address(this),
+            Ownable(referralRewarder_).owner() == address(this),
             "HF: Not yet owner of HRP"
         );
-        referralPoints = ReferralPoints(referralPoints_);
+        referralRewarder = ReferralRewarder(referralRewarder_);
     }
 
     // Update reward vairables for all pools. Be careful of gas spending!
@@ -341,7 +344,7 @@ contract HoneyFarm is Ownable, ERC721 {
 
     function _rewardReferrer(address referrer, uint256 reward) internal {
         if (referrer != address(0)) {
-            referralPoints.mint(referrer, reward);
+            referralRewarder.distributeReward(referrer, reward);
         }
     }
 
