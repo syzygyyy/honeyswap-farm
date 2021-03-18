@@ -18,7 +18,7 @@ const [admin1, user1, user2] = accounts
 
 const HoneyFarm = contract.fromArtifact('HoneyFarm')
 const HSFToken = contract.fromArtifact('HSFToken')
-const ReferralPoints = contract.fromArtifact('ReferralPoints')
+const ReferralRewarder = contract.fromArtifact('ReferralRewarder')
 const TestERC20 = contract.fromArtifact('TestERC20')
 
 describe('HoneyFarm', () => {
@@ -48,9 +48,11 @@ describe('HoneyFarm', () => {
       { from: admin1 }
     )
     expect(await this.farmToken.balanceOf(this.farm.address)).to.be.bignumber.equal(this.totalDist)
-    this.referralPoints = await ReferralPoints.new({ from: admin1 })
-    await this.referralPoints.transferOwnership(this.farm.address, { from: admin1 })
-    await this.farm.setReferralPoints(this.referralPoints.address, { from: admin1 })
+    this.referralRewarder = await ReferralRewarder.new(this.farmToken.address, ether('0.8'), {
+      from: admin1
+    })
+    await this.referralRewarder.transferOwnership(this.farm.address, { from: admin1 })
+    await this.farm.setReferralRewarder(this.referralRewarder.address, { from: admin1 })
 
     this.SCALE = await this.farm.SCALE()
 
@@ -81,12 +83,14 @@ describe('HoneyFarm', () => {
   })
   it('updates pool correctly when entering and exiting', async () => {
     await expectRevert(this.farm.getPoolByIndex(new BN('0')), 'EnumerableSet: index out of bounds')
+    // correct empty defaults
     const beforeAddPoolInfo = await this.farm.poolInfo(this.lpToken1.address)
     expect(beforeAddPoolInfo.allocPoint).to.be.bignumber.equal(ZERO)
     expect(beforeAddPoolInfo.lastRewardTimestamp).to.be.bignumber.equal(ZERO)
     expect(beforeAddPoolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
     expect(beforeAddPoolInfo.totalShares).to.be.bignumber.equal(ZERO)
 
+    // correctly adds pools
     const allocPoint = new BN('20')
     const poolToken = this.lpToken1.address
     const receipt = await this.farm.add(allocPoint, poolToken, true, {
@@ -98,6 +102,7 @@ describe('HoneyFarm', () => {
       'HF: LP pool already exists'
     )
 
+    // correct initialized defaults
     const startTime = await this.farm.startTime()
     let poolInfo = await this.farm.poolInfo(this.lpToken1.address)
     expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
@@ -105,6 +110,7 @@ describe('HoneyFarm', () => {
     expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
     expect(poolInfo.totalShares).to.be.bignumber.equal(ZERO)
 
+    // open deposit
     await this.lpToken1.mint(user1, ether('60'))
     await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })
     const deposit1 = ether('30')
@@ -112,28 +118,40 @@ describe('HoneyFarm', () => {
       from: user1
     })
 
+    // correctly updates after deposit added
     poolInfo = await this.farm.poolInfo(this.lpToken1.address)
     expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
     expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
     expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
     expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1)
 
+    // open second deposit
     const deposit2 = ether('20')
     await this.farm.createDeposit(this.lpToken1.address, deposit2, ZERO, ZERO_ADDRESS, {
       from: user1
     })
 
+    // correctly updates after another deposit is added
     poolInfo = await this.farm.poolInfo(this.lpToken1.address)
     expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
     expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
     expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
     expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
 
+    // allow rewards to accrue and update pools
     const skipTo = startTime.add(time.duration.days(2))
     await time.increaseTo(skipTo)
-    const expectedRewardPerShare = (await this.farm.getDist(startTime, skipTo)).div(
-      deposit1.add(deposit2)
-    )
+    const expectedRewardPerShare = (await this.farm.getDist(startTime, skipTo))
+      .mul(this.SCALE)
+      .div(deposit1.add(deposit2))
+    await this.farm.updatePool(this.lpToken1.address)
+
+    // correctly updates after another deposit is added
+    poolInfo = await this.farm.poolInfo(this.lpToken1.address)
+    expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+    expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(skipTo)
+    expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(expectedRewardPerShare)
+    expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
   })
   it('can deposit LP tokens', async () => {
     expect(await this.farm.totalDeposits()).to.be.bignumber.equal(ZERO)
