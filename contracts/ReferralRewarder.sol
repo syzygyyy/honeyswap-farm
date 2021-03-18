@@ -2,6 +2,7 @@
 pragma solidity ^0.7.6;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
@@ -17,14 +18,8 @@ contract ReferralRewarder is Ownable {
         exchangeRate = exchangeRate_;
     }
 
-    function distributeReward(
-        address referrer,
-        uint256 amount
-    )
-        external
-        onlyOwner
-    {
+    function distributeReward(address referrer, uint256 amount) external onlyOwner {
         uint256 reward = amount.mul(exchangeRate).div(SCALE);
-        rewardToken.transfer(referrer, reward);
+        SafeERC20.safeTransfer(rewardToken, referrer, reward);
     }
 }

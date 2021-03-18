@@ -32,7 +32,9 @@ contract HoneyFarm is Ownable, ERC721 {
     // Info of each pool.
     struct PoolInfo {
         uint256 allocPoint; // How many allocation points assigned to this pool.
-        uint256 lastRewardTimestamp; // Last block timestamp that HSFs distribution occured
+        /* Last block timestamp that HSFs distribution occured, initially set
+           to the startTime. */
+        uint256 lastRewardTimestamp;
         uint256 accHsfPerShare; // Accumulated HSFs per share, times SCALE.
         uint256 totalShares; // total shares stored in pool
     }
@@ -72,6 +74,8 @@ contract HoneyFarm is Ownable, ERC721 {
     bool public contractDisabled;
 
     event PoolAdded(IERC20 indexed poolToken, uint256 allocPoint);
+    /* fired when pool parameters are updated not when the updatePool() method
+       is called */
     event PoolUpdated(IERC20 indexed poolToken, uint256 allocPoint);
     event Disabled();
     event DepositDowngraded(uint256 depositId);
@@ -338,7 +342,8 @@ contract HoneyFarm is Ownable, ERC721 {
         }
         uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
         uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-        pool.accHsfPerShare = pool.accHsfPerShare.add(hsfReward.div(totalShares));
+        uint256 poolScaledRewards = hsfReward.mul(SCALE).div(totalShares);
+        pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
         pool.lastRewardTimestamp = block.timestamp;
     }
 
