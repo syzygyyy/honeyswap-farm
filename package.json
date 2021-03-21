@@ -21,12 +21,12 @@
   },
   "homepage": "https://github.com/1Hive/honeyswap-farm#readme",
   "devDependencies": {
+    "@openzeppelin/test-helpers": "github:MrClottom/openzeppelin-test-helpers",
     "eslint": "^7.20.0",
     "eslint-plugin-prettier": "^3.3.1"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^3.4.0-solc-0.7",
-    "@openzeppelin/test-environment": "^0.1.9",
-    "@openzeppelin/test-helpers": "^0.5.10"
+    "@openzeppelin/test-environment": "^0.1.9"
   }
 }
