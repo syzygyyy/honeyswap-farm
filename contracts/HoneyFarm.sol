@@ -342,7 +342,7 @@ contract HoneyFarm is Ownable, ERC721 {
         }
         uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
         uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
-        uint256 poolScaledRewards = hsfReward.mul(SCALE).div(totalShares);
+        uint256 poolScaledRewards = hsfReward.div(totalShares);
         pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
         pool.lastRewardTimestamp = block.timestamp;
     }
