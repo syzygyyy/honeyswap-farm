@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/Math.sol";
 
 contract ReferralRewarder is Ownable {
     using SafeMath for uint256;
@@ -13,13 +14,23 @@ contract ReferralRewarder is Ownable {
     IERC20 public immutable rewardToken;
     uint256 public immutable exchangeRate;
 
+    event MissingReward(address indexed referrer, uint256 owedReward);
+
     constructor(IERC20 rewardToken_, uint256 exchangeRate_) Ownable() {
         rewardToken = rewardToken_;
         exchangeRate = exchangeRate_;
     }
 
     function distributeReward(address referrer, uint256 amount) external onlyOwner {
+        uint256 currentReserves = rewardToken.balanceOf(address(this));
         uint256 reward = amount.mul(exchangeRate).div(SCALE);
-        SafeERC20.safeTransfer(rewardToken, referrer, reward);
+        if (reward <= currentReserves) {
+            SafeERC20.safeTransfer(rewardToken, referrer, reward);
+        } else if (currentReserves > 0) {
+            SafeERC20.safeTransfer(rewardToken, referrer, currentReserves);
+            emit MissingReward(referrer, currentReserves - reward);
+        } else {
+            emit MissingReward(referrer, reward);
+        }
     }
 }
