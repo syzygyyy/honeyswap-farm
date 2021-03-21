@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 pragma solidity 0.7.6;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -10,7 +9,6 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./ReferralRewarder.sol";
-
 
 // Forked from sushiswap's MasterChef contract
 contract HoneyFarm is Ownable, ERC721 {
@@ -78,7 +76,7 @@ contract HoneyFarm is Ownable, ERC721 {
        is called */
     event PoolUpdated(IERC20 indexed poolToken, uint256 allocPoint);
     event Disabled();
-    event DepositDowngraded(uint256 depositId);
+    event DepositDowngraded(address indexed downgrader, uint256 depositId);
     event Referred(address indexed referrer, uint256 depositId);
 
     constructor(
@@ -160,16 +158,13 @@ contract HoneyFarm is Ownable, ERC721 {
     // Add a new lp to the pool. Can only be called by the owner.
     function add(
         uint256 allocPoint,
-        IERC20 lpToken,
-        bool withUpdate
+        IERC20 lpToken
     ) public onlyOwner notDisabled {
         require(
             address(referralRewarder) != address(0),
             "HF: Referral not setup yet"
         );
-        if (withUpdate) {
-            massUpdatePools();
-        }
+        massUpdatePools();
         uint256 lastRewardTimestamp = Math.max(block.timestamp, startTime);
         totalAllocPoint = totalAllocPoint.add(allocPoint);
         require(_pools.add(address(lpToken)), "HF: LP pool already exists");
@@ -185,12 +180,9 @@ contract HoneyFarm is Ownable, ERC721 {
     // Update the given pool's SUSHI allocation point. Can only be called by the owner.
     function set(
         IERC20 poolToken,
-        uint256 allocPoint,
-        bool withUpdate
+        uint256 allocPoint
     ) public onlyOwner notDisabled {
-        if (withUpdate) {
-            massUpdatePools();
-        }
+        massUpdatePools();
         totalAllocPoint = totalAllocPoint.sub(poolInfo[poolToken].allocPoint).add(
             allocPoint
         );
@@ -207,7 +199,7 @@ contract HoneyFarm is Ownable, ERC721 {
         from = Math.max(startTime, from);
         to = Math.min(to, endTime);
 
-        if (from > to) return 0;
+        if (from > to) return uint256(0);
 
         from = from.sub(startTime);
         to = to.sub(startTime);
@@ -287,7 +279,7 @@ contract HoneyFarm is Ownable, ERC721 {
         updatePool(poolToken);
         deposit.setRewards = _getPendingHsf(deposit, pool);
         _resetRewardAccs(deposit, pool, deposit.amount, 0);
-        emit DepositDowngraded(depositId);
+        emit DepositDowngraded(msg.sender, depositId);
     }
 
     // Withdraw LP tokens from HoneyFarm along with reward
