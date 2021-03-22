@@ -51,6 +51,10 @@ class _BalanceTracker {
 
     return difference
   }
+
+  async reset() {
+    this.prev = await this._get()
+  }
 }
 
 const trackBalance = async (token, address, setPrev = true) => {

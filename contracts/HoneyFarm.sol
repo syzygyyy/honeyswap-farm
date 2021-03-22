@@ -373,9 +373,9 @@ contract HoneyFarm is Ownable, ERC721 {
     )
         internal
     {
-        deposit.rewardDebt = amount.mul(pool.accHsfPerShare).div(SCALE);
         deposit.unlockTime = unlockTime;
         uint256 newShares = amount.mul(getTimeMultiple(unlockTime)).div(SCALE);
+        deposit.rewardDebt = newShares.mul(pool.accHsfPerShare).div(SCALE);
         pool.totalShares = pool.totalShares.sub(deposit.rewardShare).add(newShares);
         deposit.rewardShare = newShares;
     }
