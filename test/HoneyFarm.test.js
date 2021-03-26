@@ -180,7 +180,8 @@ describe('HoneyFarm', () => {
         poolInfo.accHsfPerShare,
         expectedRewardPerShare,
         new BN('1'),
-        bnE('1', '6')
+        bnE('1', '6'),
+        'Incorrect rewards per share'
       )
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
 
@@ -579,6 +580,100 @@ describe('HoneyFarm', () => {
         await user1xCombTracker.delta(),
         (await this.farm.getDist(this.startTime, targetTime)).div(this.SCALE),
         this.maxError
+      )
+    })
+    it('allows withdrawing pending rewards from locked deposit', async () => {
+      const user1PoolTracker = await trackBalance(this.lpToken1, user1)
+      const user1xCombTracker = await trackBalance(this.farmToken, user1)
+
+      const depositDuration = time.duration.days(60)
+      const depositEnd = (await time.latest()).add(depositDuration)
+      const midPoint = depositEnd.sub(depositDuration.div(new BN('2')))
+      const depositId = new BN('0')
+      await this.farm.createDeposit(this.poolToken, this.mintAmount, depositEnd, ZERO_ADDRESS, {
+        from: user1
+      })
+      await user1xCombTracker.reset()
+      await user1PoolTracker.reset()
+
+      // jump to half way point
+      await time.increaseTo(midPoint)
+
+      await expectRevert(
+        this.farm.withdrawRewards(depositId, { from: attacker1 }),
+        'HF: Must be owner of deposit'
+      )
+
+      let pendingRewards = await this.farm.pendingHsf(depositId)
+      let receipt = await this.farm.withdrawRewards(depositId, { from: user1 })
+      expectEqualWithinFraction(
+        await user1xCombTracker.delta(),
+        pendingRewards,
+        new BN('1'),
+        bnE('1', '6'),
+        'didn\'t receive pending rewards'
+      )
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expectEvent.notEmitted(receipt, 'DepositDowngraded')
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      expectEqualWithinError(
+        pendingRewards,
+        ZERO,
+        this.maxError,
+        'rewards still pending after withdraw'
+      )
+
+      // jump to end
+      await time.increaseTo(depositEnd)
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      receipt = await this.farm.withdrawRewards(depositId, { from: user1 })
+      expectEqualWithinFraction(
+        await user1xCombTracker.delta(),
+        pendingRewards,
+        new BN('1'),
+        bnE('1', '6')
+      )
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expect(receipt, 'DepositDowngraded', { downgrader: user1, depositId })
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      expectEqualWithinError(pendingRewards, ZERO, this.maxError)
+
+      expectEqualWithinFraction(
+        await user1xCombTracker.get(),
+        (await this.farm.getDist(this.startTime, depositEnd)).div(this.SCALE),
+        new BN('1'),
+        bnE('1', '6')
+      )
+
+      // still acrues withdrawable rewards after downgrade
+      await time.increase(time.duration.days(20))
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      receipt = await this.farm.withdrawRewards(depositId, { from: user1 })
+      expectEqualWithinFraction(
+        await user1xCombTracker.delta(),
+        pendingRewards,
+        new BN('1'),
+        bnE('1', '6')
+      )
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expectEvent.notEmitted(receipt, 'DepositDowngraded')
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      expectEqualWithinError(pendingRewards, ZERO, this.maxError)
+
+      pendingRewards = await this.farm.pendingHsf(depositId)
+      receipt = await this.farm.closeDeposit(depositId, { from: user1 })
+      expectEqualWithinFraction(
+        await user1xCombTracker.delta(),
+        pendingRewards,
+        new BN('1'),
+        bnE('1', '6')
+      )
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(this.mintAmount)
+      expectEvent(receipt, 'Transfer', { from: user1, to: ZERO_ADDRESS, tokenId: depositId })
+
+      await expectRevert(
+        this.farm.withdrawRewards(depositId, { from: user1 }),
+        'ERC721: owner query for nonexistent token'
       )
     })
   })

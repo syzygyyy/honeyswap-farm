@@ -267,21 +267,6 @@ contract HoneyFarm is Ownable, ERC721 {
         }
     }
 
-    function downgradeExpired(uint256 depositId) external {
-        DepositInfo storage deposit = depositInfo[depositId];
-        require(deposit.unlockTime > 0, "HF: no lock to expire");
-        require(
-            deposit.unlockTime <= block.timestamp,
-            "HF: deposit has not expired yet"
-        );
-        IERC20 poolToken = deposit.pool;
-        PoolInfo storage pool = poolInfo[poolToken];
-        updatePool(poolToken);
-        deposit.setRewards = _getPendingHsf(deposit, pool);
-        _resetRewardAccs(deposit, pool, deposit.amount, 0);
-        emit DepositDowngraded(msg.sender, depositId);
-    }
-
     // Withdraw LP tokens from HoneyFarm along with reward
     function closeDeposit(uint256 depositId) external {
         require(ownerOf(depositId) == msg.sender, "HF: Must be owner to withdraw");
@@ -311,6 +296,33 @@ contract HoneyFarm is Ownable, ERC721 {
             "HF: Not yet owner of HRP"
         );
         referralRewarder = ReferralRewarder(referralRewarder_);
+    }
+
+    function withdrawRewards(uint256 depositId) external {
+        require(ownerOf(depositId) == msg.sender, "HF: Must be owner of deposit");
+        DepositInfo storage deposit = depositInfo[depositId];
+        PoolInfo storage pool = poolInfo[deposit.pool];
+        uint256 _unlockTime = deposit.unlockTime;
+        if (_unlockTime > 0 && _unlockTime <= block.timestamp) {
+            _downgradeExpired(depositId);
+        } else {
+            updatePool(deposit.pool);
+        }
+        uint256 pendingRewards = _getPendingHsf(deposit, pool);
+        deposit.setRewards = uint256(0);
+        deposit.rewardDebt = deposit.rewardShare.mul(pool.accHsfPerShare).div(SCALE);
+        _rewardReferrer(deposit.referrer, pendingRewards);
+        _safeHsfTransfer(msg.sender, pendingRewards);
+    }
+
+    function downgradeExpired(uint256 depositId) public {
+        DepositInfo storage deposit = depositInfo[depositId];
+        require(deposit.unlockTime > 0, "HF: no lock to expire");
+        require(
+            deposit.unlockTime <= block.timestamp,
+            "HF: deposit has not expired yet"
+        );
+        _downgradeExpired(depositId);
     }
 
     // Update reward vairables for all pools. Be careful of gas spending!
@@ -343,6 +355,16 @@ contract HoneyFarm is Ownable, ERC721 {
         if (referrer != address(0)) {
             referralRewarder.distributeReward(referrer, reward);
         }
+    }
+
+    function _downgradeExpired(uint256 depositId) internal {
+        DepositInfo storage deposit = depositInfo[depositId];
+        IERC20 poolToken = deposit.pool;
+        PoolInfo storage pool = poolInfo[poolToken];
+        updatePool(poolToken);
+        deposit.setRewards = _getPendingHsf(deposit, pool);
+        _resetRewardAccs(deposit, pool, deposit.amount, 0);
+        emit DepositDowngraded(msg.sender, depositId);
     }
 
     function _getPendingHsf(
