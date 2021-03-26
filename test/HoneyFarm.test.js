@@ -176,7 +176,12 @@ describe('HoneyFarm', () => {
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
       expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
-      expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(expectedRewardPerShare)
+      expectEqualWithinFraction(
+        poolInfo.accHsfPerShare,
+        expectedRewardPerShare,
+        new BN('1'),
+        bnE('1', '6')
+      )
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
 
       // change pool weight
