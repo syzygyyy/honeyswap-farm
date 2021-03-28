@@ -105,7 +105,6 @@ describe('HoneyFarm', () => {
         this.farm.getPoolByIndex(new BN('0')),
         'EnumerableSet: index out of bounds'
       )
-      console.log('1')
       // correct empty defaults
       const beforeAddPoolInfo = await this.farm.poolInfo(this.lpToken1.address)
       expect(beforeAddPoolInfo.allocPoint).to.be.bignumber.equal(ZERO)
@@ -126,7 +125,6 @@ describe('HoneyFarm', () => {
         'HF: LP pool already exists'
       )
 
-      console.log('2')
       // correct initialized defaults
       const startTime = await this.farm.startTime()
       let poolInfo = await this.farm.poolInfo(poolToken)
@@ -143,7 +141,6 @@ describe('HoneyFarm', () => {
         from: user1
       })
 
-      console.log('3')
       // correctly updates after deposit added
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
@@ -155,7 +152,6 @@ describe('HoneyFarm', () => {
       const deposit2 = ether('20')
       await this.farm.createDeposit(poolToken, deposit2, ZERO, ZERO_ADDRESS, { from: user1 })
 
-      console.log('4')
       // correctly updates after another deposit is added
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
@@ -169,18 +165,19 @@ describe('HoneyFarm', () => {
       const expectedRewardPerShare = (await this.farm.getDist(startTime, skipTo)).div(
         deposit1.add(deposit2)
       )
+      const allowedShareError = (
+        await this.farm.getDist(skipTo, skipTo.add(time.duration.seconds(2)))
+      ).add(deposit1.add(deposit2))
       await this.farm.updatePool(poolToken)
 
-      console.log('5')
       // correctly updates after rewards accrue
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
       expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
-      expectEqualWithinFraction(
+      expectEqualWithinError(
         poolInfo.accHsfPerShare,
         expectedRewardPerShare,
-        new BN('1'),
-        bnE('1', '6'),
+        allowedShareError,
         'Incorrect rewards per share'
       )
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
@@ -191,25 +188,28 @@ describe('HoneyFarm', () => {
       expectEvent(receipt, 'PoolUpdated', { poolToken, allocPoint })
       expectEvent.notEmitted(receipt, 'PoolAdded')
 
-      console.log('6')
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
       expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
-      expectEqualWithinError(poolInfo.accHsfPerShare, expectedRewardPerShare, this.maxError)
+      expectEqualWithinError(poolInfo.accHsfPerShare, expectedRewardPerShare, allowedShareError)
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
 
       // closing a deposit
       await this.farm.closeDeposit(new BN('0'), { from: user1 })
 
-      console.log('7')
       poolInfo = await this.farm.poolInfo(poolToken)
       expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
-      expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
-      expectEqualWithinFraction(
+      expectEqualWithinError(
+        poolInfo.lastRewardTimestamp,
+        skipTo,
+        time.duration.seconds(2),
+        'timestamp mismatch'
+      )
+      expectEqualWithinError(
         poolInfo.accHsfPerShare,
         expectedRewardPerShare,
-        new BN('1'),
-        bnE('1', '6')
+        allowedShareError,
+        'incorrect rewards per share'
       )
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit2)
     })
@@ -613,7 +613,7 @@ describe('HoneyFarm', () => {
         bnE('1', '6'),
         'didn\'t receive pending rewards'
       )
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO, 'received pool tokens')
       expectEvent.notEmitted(receipt, 'DepositDowngraded')
       pendingRewards = await this.farm.pendingHsf(depositId)
       expectEqualWithinError(
@@ -631,18 +631,20 @@ describe('HoneyFarm', () => {
         await user1xCombTracker.delta(),
         pendingRewards,
         new BN('1'),
-        bnE('1', '6')
+        bnE('1', '6'),
+        'wrong rewards received'
       )
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO, 'received pool tokens')
       expect(receipt, 'DepositDowngraded', { downgrader: user1, depositId })
       pendingRewards = await this.farm.pendingHsf(depositId)
-      expectEqualWithinError(pendingRewards, ZERO, this.maxError)
+      expectEqualWithinError(pendingRewards, ZERO, this.maxError, 'still has pending rewards')
 
       expectEqualWithinFraction(
         await user1xCombTracker.get(),
         (await this.farm.getDist(this.startTime, depositEnd)).div(this.SCALE),
         new BN('1'),
-        bnE('1', '6')
+        bnE('1', '6'),
+        'expect received total rewards match distribution'
       )
 
       // still acrues withdrawable rewards after downgrade
@@ -655,18 +657,21 @@ describe('HoneyFarm', () => {
         new BN('1'),
         bnE('1', '6')
       )
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO, 'received pool tokens')
       expectEvent.notEmitted(receipt, 'DepositDowngraded')
       pendingRewards = await this.farm.pendingHsf(depositId)
-      expectEqualWithinError(pendingRewards, ZERO, this.maxError)
+      expectEqualWithinError(pendingRewards, ZERO, this.maxError, 'still has pending rewards (1)')
 
+      // close deposit
+      await time.increase(time.duration.days(20))
       pendingRewards = await this.farm.pendingHsf(depositId)
       receipt = await this.farm.closeDeposit(depositId, { from: user1 })
       expectEqualWithinFraction(
         await user1xCombTracker.delta(),
         pendingRewards,
         new BN('1'),
-        bnE('1', '6')
+        bnE('1', '6'),
+        'still has pending rewards (2)'
       )
       expect(await user1PoolTracker.delta()).to.be.bignumber.equal(this.mintAmount)
       expectEvent(receipt, 'Transfer', { from: user1, to: ZERO_ADDRESS, tokenId: depositId })

@@ -79,7 +79,9 @@ const expectEqualWithinFraction = (a, b, numerator, denominator, errorMsg) => {
 
 const expectEqualWithinError = (a, b, error, errorMsg) => {
   const diff = a.sub(b).abs()
-  expect(diff).to.be.bignumber.at.most(error, errorMsg)
+  if (diff.gt(error)) {
+    expect(a).to.be.bignumber.equal(b, errorMsg ?? 'no error message')
+  }
 }
 
 module.exports = {
