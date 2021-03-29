@@ -69,7 +69,7 @@ contract HoneyFarm is Ownable, ERC721 {
     // constant added to the timeLockMultiplier scaled by SCALE
     uint256 public immutable timeLockConstant;
     // whether this contract has been disabled
-    bool public contractDisabled;
+    uint256 public contractDisabledAt;
 
     event PoolAdded(IERC20 indexed poolToken, uint256 allocPoint);
     /* fired when pool parameters are updated not when the updatePool() method
@@ -116,7 +116,7 @@ contract HoneyFarm is Ownable, ERC721 {
     }
 
     modifier notDisabled {
-        require(!contractDisabled, "HF: Contract already disabled");
+        require(contractDisabledAt == 0, "HF: Contract already disabled");
         _;
     }
 
@@ -151,7 +151,7 @@ contract HoneyFarm is Ownable, ERC721 {
         massUpdatePools();
         uint256 remainingTokens = getDist(block.timestamp, endTime);
         _safeHsfTransfer(tokenRecipient, remainingTokens.div(SCALE));
-        contractDisabled = true;
+        contractDisabledAt = block.timestamp;
         emit Disabled();
     }
 
@@ -165,9 +165,9 @@ contract HoneyFarm is Ownable, ERC721 {
             "HF: Referral not setup yet"
         );
         massUpdatePools();
+        require(_pools.add(address(lpToken)), "HF: LP pool already exists");
         uint256 lastRewardTimestamp = Math.max(block.timestamp, startTime);
         totalAllocPoint = totalAllocPoint.add(allocPoint);
-        require(_pools.add(address(lpToken)), "HF: LP pool already exists");
         poolInfo[lpToken] = PoolInfo({
             allocPoint: allocPoint,
             lastRewardTimestamp: lastRewardTimestamp,
@@ -177,11 +177,12 @@ contract HoneyFarm is Ownable, ERC721 {
         emit PoolAdded(lpToken, allocPoint);
     }
 
-    // Update the given pool's SUSHI allocation point. Can only be called by the owner.
+    // Update the given pool's allocation point. Can only be called by the owner.
     function set(
         IERC20 poolToken,
         uint256 allocPoint
     ) public onlyOwner notDisabled {
+        require(_pools.contains(address(poolToken)), "HF: Non-existant pool");
         massUpdatePools();
         totalAllocPoint = totalAllocPoint.sub(poolInfo[poolToken].allocPoint).add(
             allocPoint
@@ -197,7 +198,7 @@ contract HoneyFarm is Ownable, ERC721 {
         returns (uint256)
     {
         from = Math.max(startTime, from);
-        to = Math.min(to, endTime);
+        to = Math.min(to, contractDisabledAt == 0 ? endTime : contractDisabledAt);
 
         if (from > to) return uint256(0);
 
@@ -238,6 +239,7 @@ contract HoneyFarm is Ownable, ERC721 {
     )
         external notDisabled
     {
+        require(amount > 0, "HF: Must deposit something");
         require(
             unlockTime == 0 || unlockTime > block.timestamp,
             "HF: Invalid unlock time"
@@ -274,7 +276,7 @@ contract HoneyFarm is Ownable, ERC721 {
         require(
             deposit.unlockTime == 0 ||
             deposit.unlockTime <= block.timestamp ||
-            contractDisabled,
+            contractDisabledAt > 0,
             "HF: Deposit still locked"
         );
         IERC20 poolToken = deposit.pool;
@@ -325,7 +327,7 @@ contract HoneyFarm is Ownable, ERC721 {
         _downgradeExpired(depositId);
     }
 
-    // Update reward vairables for all pools. Be careful of gas spending!
+    // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
         uint256 length = _pools.length();
         for (uint256 pid = 0; pid < length; pid++) {

@@ -15,7 +15,7 @@ const {
 const { expect } = require('chai')
 const BN = require('bn.js')
 
-const [admin1, user1, user2, attacker1] = accounts
+const [admin1, admin2, user1, user2, attacker1, attacker2] = accounts
 
 const HoneyFarm = contract.fromArtifact('HoneyFarm')
 const HSFToken = contract.fromArtifact('HSFToken')
@@ -58,11 +58,12 @@ describe('HoneyFarm', () => {
       this.SCALE,
       { from: admin1 }
     )
-    this.errorTime = time.duration.seconds(5)
-    this.maxError = (
-      await this.farm.getDist(this.startTime, this.startTime.add(this.errorTime))
-    ).div(this.SCALE)
+    this.SCALE = await this.farm.SCALE()
+    this.getFarmDist = async (start, end) => (await this.farm.getDist(start, end)).div(this.SCALE)
 
+    this.errorTime = time.duration.seconds(2)
+    this.getDistError = (edgeTime) => this.getFarmDist(edgeTime, edgeTime.add(this.errorTime))
+    this.maxError = await this.getDistError(this.startTime)
     expect(await this.farmToken.balanceOf(this.farm.address)).to.be.bignumber.equal(this.totalDist)
     this.refRewardRate = ether('0.8')
     this.referralRewarder = await ReferralRewarder.new(this.farmToken.address, this.refRewardRate, {
@@ -70,8 +71,6 @@ describe('HoneyFarm', () => {
     })
     await this.referralRewarder.transferOwnership(this.farm.address, { from: admin1 })
     await this.farm.setReferralRewarder(this.referralRewarder.address, { from: admin1 })
-
-    this.SCALE = await this.farm.SCALE()
 
     this.lpToken1 = await TestERC20.new()
     this.lpToken2 = await TestERC20.new()
@@ -81,8 +80,9 @@ describe('HoneyFarm', () => {
       await fundReferralRewarder()
     })
     it('calculates total distribution accurately', async () => {
-      const dist = await this.farm.getDist(this.startTime, this.endTime)
-      expect(dist.div(this.SCALE)).to.be.bignumber.equal(this.totalDist)
+      expect(await this.getFarmDist(this.startTime, this.endTime)).to.be.bignumber.equal(
+        this.totalDist
+      )
     })
     it('can add pool', async () => {
       expect(await this.farm.poolLength()).to.be.bignumber.equal(ZERO)
@@ -167,7 +167,7 @@ describe('HoneyFarm', () => {
       )
       const allowedShareError = (
         await this.farm.getDist(skipTo, skipTo.add(time.duration.seconds(2)))
-      ).add(deposit1.add(deposit2))
+      ).div(deposit1.add(deposit2))
       await this.farm.updatePool(poolToken)
 
       // correctly updates after rewards accrue
@@ -470,6 +470,88 @@ describe('HoneyFarm', () => {
       this.mintAmount = ether('10')
       await this.lpToken1.mint(user1, this.mintAmount)
       await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })
+    })
+    describe('disabling', () => {
+      beforeEach(async () => {
+        // setup deposit params
+        this.depositDuration = time.duration.days(180)
+        this.depositStart = this.startTime
+        this.depositEnd = this.depositStart.add(this.depositDuration)
+        this.halfwayPoint = this.depositStart.add(this.depositDuration.div(new BN('2')))
+        const receipt = await this.farm.createDeposit(
+          this.poolToken,
+          this.mintAmount,
+          this.depositEnd,
+          ZERO_ADDRESS,
+          { from: user1 }
+        )
+        this.depositId = receipt.logs[0].args.tokenId
+        // jump to half way point
+        await time.increaseTo(this.halfwayPoint)
+      })
+      it('non-admin cannot disable', async () => {
+        await expectRevert(
+          this.farm.disableContract(attacker2, { from: attacker1 }),
+          'Ownable: caller is not the owner'
+        )
+      })
+      it('cannot close before disable', async () => {
+        await expectRevert(
+          this.farm.closeDeposit(this.depositId, { from: user1 }),
+          'HF: Deposit still locked'
+        )
+      })
+      it('allows admin to disable contract', async () => {
+        const expectedDist = await this.getFarmDist(this.halfwayPoint, this.endTime)
+        const allowedDistError = await this.getDistError(this.halfwayPoint)
+        const receipt = await this.farm.disableContract(admin2, { from: admin1 })
+        expectEvent(receipt, 'Disabled', {})
+        expectEqualWithinError(
+          await this.farmToken.balanceOf(admin2),
+          expectedDist,
+          allowedDistError,
+          'doesn\'t receive remaining tokens'
+        )
+      })
+      it('prevents creation of new deposits', async () => {
+        await this.farm.disableContract(admin2, { from: admin1 })
+        const newDepositAmount = ether('12')
+        await this.lpToken1.mint(user2, newDepositAmount)
+        await this.lpToken1.approve(this.farm.address, MAX_UINT256)
+        await expectRevert(
+          this.farm.createDeposit(this.poolToken, newDepositAmount, ZERO, ZERO_ADDRESS, {
+            from: user2
+          }),
+          'HF: Contract already disabled'
+        )
+      })
+      it('still gets rewards', async () => {
+        const expectedDist = await this.getFarmDist(this.startTime, this.halfwayPoint)
+        const allowedDistError = await this.getDistError(this.halfwayPoint)
+        await this.farm.disableContract(admin2, { from: admin1 })
+        await this.farm.withdrawRewards(this.depositId, { from: user1 })
+        expectEqualWithinError(
+          await this.farmToken.balanceOf(user1),
+          expectedDist,
+          allowedDistError
+        )
+      })
+      it('doesn\'t accumulate rewards for deposits after disable', async () => {
+        await this.farm.disableContract(admin2, { from: admin1 })
+        await this.farm.withdrawRewards(this.depositId, { from: user1 })
+        await time.increase(time.duration.days(10))
+        expect(await this.farm.pendingHsf(this.depositId)).to.be.bignumber.equal(ZERO)
+        expect(await time.latest()).to.be.bignumber.below(this.depositEnd)
+        await this.farm.closeDeposit(this.depositId, { from: user1 })
+      })
+    })
+    it('prevents deposits with 0 amount from being created', async () => {
+      const depositDuration = time.duration.days(60)
+      const depositEnd = (await time.latest()).add(depositDuration)
+      await expectRevert(
+        this.farm.createDeposit(this.poolToken, ZERO, depositEnd, ZERO_ADDRESS, { from: user1 }),
+        'HF: Must deposit something'
+      )
     })
     it('correctly initializes time-locked deposit before reward distribution begin', async () => {
       // setup

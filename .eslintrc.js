@@ -7,7 +7,8 @@ module.exports = {
   globals: {
     describe: 'readonly',
     it: 'readonly',
-    beforeEach: 'readonly'
+    beforeEach: 'readonly',
+    before: 'readonly'
   },
   extends: 'eslint:recommended',
   parserOptions: {
