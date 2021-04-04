@@ -86,16 +86,16 @@ describe('HoneyFarm', () => {
     })
     it('can add pool', async () => {
       expect(await this.farm.poolLength()).to.be.bignumber.equal(ZERO)
-      const allocPoints = new BN('20')
-      await this.farm.add(allocPoints, this.lpToken1.address, {
+      const allocation = new BN('20')
+      await this.farm.add(this.lpToken1.address, allocation, {
         from: admin1
       })
 
-      expect(await this.farm.totalAllocPoint()).to.be.bignumber.equal(allocPoints)
+      expect(await this.farm.totalAllocationPoints()).to.be.bignumber.equal(allocation)
       expect(await this.farm.poolLength()).to.be.bignumber.equal(new BN('1'))
 
       const pool = await this.farm.poolInfo(this.lpToken1.address)
-      expect(pool.allocPoint).to.be.bignumber.equal(allocPoints)
+      expect(pool.allocation).to.be.bignumber.equal(allocation)
       expect(pool.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(pool.totalShares).to.be.bignumber.equal(ZERO)
       expect(pool.lastRewardTimestamp).to.be.bignumber.equal(await this.farm.startTime())
@@ -107,28 +107,28 @@ describe('HoneyFarm', () => {
       )
       // correct empty defaults
       const beforeAddPoolInfo = await this.farm.poolInfo(this.lpToken1.address)
-      expect(beforeAddPoolInfo.allocPoint).to.be.bignumber.equal(ZERO)
+      expect(beforeAddPoolInfo.allocation).to.be.bignumber.equal(ZERO)
       expect(beforeAddPoolInfo.lastRewardTimestamp).to.be.bignumber.equal(ZERO)
       expect(beforeAddPoolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(beforeAddPoolInfo.totalShares).to.be.bignumber.equal(ZERO)
 
       // correctly adds pools
-      let allocPoint = new BN('20')
+      let allocation = new BN('20')
       const poolToken = this.lpToken1.address
-      let receipt = await this.farm.add(allocPoint, poolToken, {
+      let receipt = await this.farm.add(poolToken, allocation, {
         from: admin1
       })
-      expectEvent(receipt, 'PoolAdded', { poolToken, allocPoint })
+      expectEvent(receipt, 'PoolAdded', { poolToken, allocation })
       expectEvent.notEmitted(receipt, 'PoolUpdated')
       await expectRevert(
-        this.farm.add(new BN('30'), poolToken, { from: admin1 }),
+        this.farm.add(poolToken, new BN('30'), { from: admin1 }),
         'HF: LP pool already exists'
       )
 
       // correct initialized defaults
       const startTime = await this.farm.startTime()
       let poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
       expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(poolInfo.totalShares).to.be.bignumber.equal(ZERO)
@@ -143,7 +143,7 @@ describe('HoneyFarm', () => {
 
       // correctly updates after deposit added
       poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
       expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1)
@@ -154,7 +154,7 @@ describe('HoneyFarm', () => {
 
       // correctly updates after another deposit is added
       poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expect(poolInfo.lastRewardTimestamp).to.be.bignumber.equal(startTime)
       expect(poolInfo.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
@@ -172,7 +172,7 @@ describe('HoneyFarm', () => {
 
       // correctly updates after rewards accrue
       poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
       expectEqualWithinError(
         poolInfo.accHsfPerShare,
@@ -183,13 +183,13 @@ describe('HoneyFarm', () => {
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
 
       // change pool weight
-      allocPoint = new BN('10')
-      receipt = await this.farm.set(poolToken, allocPoint, { from: admin1 })
-      expectEvent(receipt, 'PoolUpdated', { poolToken, allocPoint })
+      allocation = new BN('10')
+      receipt = await this.farm.set(poolToken, allocation, { from: admin1 })
+      expectEvent(receipt, 'PoolUpdated', { poolToken, allocation })
       expectEvent.notEmitted(receipt, 'PoolAdded')
 
       poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expectEqualWithinError(poolInfo.lastRewardTimestamp, skipTo, time.duration.seconds(2))
       expectEqualWithinError(poolInfo.accHsfPerShare, expectedRewardPerShare, allowedShareError)
       expect(poolInfo.totalShares).to.be.bignumber.equal(deposit1.add(deposit2))
@@ -198,7 +198,7 @@ describe('HoneyFarm', () => {
       await this.farm.closeDeposit(new BN('0'), { from: user1 })
 
       poolInfo = await this.farm.poolInfo(poolToken)
-      expect(poolInfo.allocPoint).to.be.bignumber.equal(allocPoint)
+      expect(poolInfo.allocation).to.be.bignumber.equal(allocation)
       expectEqualWithinError(
         poolInfo.lastRewardTimestamp,
         skipTo,
@@ -217,7 +217,7 @@ describe('HoneyFarm', () => {
       expect(await this.farm.totalDeposits()).to.be.bignumber.equal(ZERO)
 
       // test setup
-      await this.farm.add(new BN('20'), this.lpToken1.address, {
+      await this.farm.add(this.lpToken1.address, new BN('20'), {
         from: admin1
       })
       await this.lpToken1.mint(user1, ether('54'))
@@ -283,7 +283,7 @@ describe('HoneyFarm', () => {
       expect(await this.farm.pendingHsf(new BN('1'))).to.be.bignumber.equal(ZERO)
     })
     it('can create, transfer and close deposit', async () => {
-      await this.farm.add(new BN('20'), this.lpToken1.address, {
+      await this.farm.add(this.lpToken1.address, new BN('20'), {
         from: admin1
       })
       await this.lpToken1.mint(user1, ether('54'))
@@ -338,7 +338,7 @@ describe('HoneyFarm', () => {
       )
     })
     it('distributes proportional to deposit size', async () => {
-      await this.farm.add(new BN('20'), this.lpToken1.address, {
+      await this.farm.add(this.lpToken1.address, new BN('20'), {
         from: admin1
       })
 
@@ -394,7 +394,7 @@ describe('HoneyFarm', () => {
       )
     })
     it('keeps track of duration in pool for deposits', async () => {
-      await this.farm.add(new BN('20'), this.lpToken1.address, {
+      await this.farm.add(this.lpToken1.address, new BN('20'), {
         from: admin1
       })
 
@@ -466,7 +466,7 @@ describe('HoneyFarm', () => {
   describe('deposit creation and management', () => {
     beforeEach(async () => {
       this.poolToken = this.lpToken1.address
-      await this.farm.add(new BN('20'), this.poolToken, { from: admin1 })
+      await this.farm.add(this.poolToken, new BN('20'), { from: admin1 })
       this.mintAmount = ether('10')
       await this.lpToken1.mint(user1, this.mintAmount)
       await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })
@@ -767,7 +767,7 @@ describe('HoneyFarm', () => {
   describe('referral rewards', () => {
     beforeEach(async () => {
       this.poolToken = this.lpToken1.address
-      await this.farm.add(new BN('20'), this.poolToken, { from: admin1 })
+      await this.farm.add(this.poolToken, new BN('20'), { from: admin1 })
       this.mintAmount = ether('10')
       await this.lpToken1.mint(user1, this.mintAmount)
       await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })

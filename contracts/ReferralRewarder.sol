@@ -21,16 +21,16 @@ contract ReferralRewarder is Ownable {
         exchangeRate = exchangeRate_;
     }
 
-    function distributeReward(address referrer, uint256 amount) external onlyOwner {
+    function distributeReward(address _referrer, uint256 _amount) external onlyOwner {
         uint256 currentReserves = rewardToken.balanceOf(address(this));
-        uint256 reward = amount.mul(exchangeRate).div(SCALE);
+        uint256 reward = _amount.mul(exchangeRate).div(SCALE);
         if (reward <= currentReserves) {
-            SafeERC20.safeTransfer(rewardToken, referrer, reward);
+            SafeERC20.safeTransfer(rewardToken, _referrer, reward);
         } else if (currentReserves > 0) {
-            SafeERC20.safeTransfer(rewardToken, referrer, currentReserves);
-            emit MissingReward(referrer, currentReserves - reward);
+            SafeERC20.safeTransfer(rewardToken, _referrer, currentReserves);
+            emit MissingReward(_referrer, currentReserves - reward);
         } else {
-            emit MissingReward(referrer, reward);
+            emit MissingReward(_referrer, reward);
         }
     }
 }

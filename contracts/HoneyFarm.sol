@@ -29,7 +29,7 @@ contract HoneyFarm is Ownable, ERC721 {
 
     // Info of each pool.
     struct PoolInfo {
-        uint256 allocPoint; // How many allocation points assigned to this pool.
+        uint256 allocation; // How many allocation points assigned to this pool.
         /* Last block timestamp that HSFs distribution occured, initially set
            to the startTime. */
         uint256 lastRewardTimestamp;
@@ -46,18 +46,18 @@ contract HoneyFarm is Ownable, ERC721 {
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
-    EnumerableSet.AddressSet internal _pools;
-    // Total allocation poitns. Must be the sum of all allocation points in all pools.
-    uint256 public totalAllocPoint;
+    EnumerableSet.AddressSet internal pools;
+    // Total allocation points. Must be the sum of all allocation points in all pools.
+    uint256 public totalAllocationPoints;
     // total deposits
     uint256 public totalDeposits;
     // data about infdividual deposits
     mapping(uint256 => DepositInfo) public depositInfo;
     // the negative slope of the distribution line scaled by SCALE, how much
     // less is being distributed per unit of time.
-    uint256 public immutable distSlope;
+    uint256 public immutable distributionSlope;
     // starting distribution rate / unit time scaled by SCALE
-    uint256 public immutable startDist;
+    uint256 public immutable startDistribution;
     // maximum time someone can lock their liquidity for
     uint256 public immutable maxTimeLock;
     // time at which coins begin being distributed
@@ -71,48 +71,52 @@ contract HoneyFarm is Ownable, ERC721 {
     // whether this contract has been disabled
     uint256 public contractDisabledAt;
 
-    event PoolAdded(IERC20 indexed poolToken, uint256 allocPoint);
+    event PoolAdded(IERC20 indexed poolToken, uint256 allocation);
     /* fired when pool parameters are updated not when the updatePool() method
        is called */
-    event PoolUpdated(IERC20 indexed poolToken, uint256 allocPoint);
+    event PoolUpdated(IERC20 indexed poolToken, uint256 allocation);
     event Disabled();
     event DepositDowngraded(address indexed downgrader, uint256 depositId);
     event Referred(address indexed referrer, uint256 depositId);
 
     constructor(
-        IERC20 hsf_,
-        uint256 totalHsfToDist,
-        uint256 startTime_,
-        uint256 endTime_,
+        IERC20 _hsf,
+        uint256 _totalHsfToDistribute,
+        uint256 _startTime,
+        uint256 _endTime,
         /* End distribution fraction:
            represents how much less tokens to distribute at the end vs the
            beginning scaled by SCALE. If it's 0.2 * SCALE then 80% less tokens
            will be distributed per unit of time at the end vs beginning */
-        uint256 endDistFrac,
-        uint256 maxTimeLock_,
-        uint256 timeLockMultiplier_,
-        uint256 timeLockConstant_
+        uint256 _endDistributionFraction,
+        uint256 _maxTimeLock,
+        uint256 _timeLockMultiplier,
+        uint256 _timeLockConstant
     ) ERC721("HoneyFarm Deposits v1", "HFD") {
-        require(endTime_ > startTime_, "HF: endTime before startTime");
-        hsf = hsf_;
-        startTime = startTime_;
-        endTime = endTime_;
-        maxTimeLock = maxTimeLock_;
-        timeLockMultiplier = timeLockMultiplier_;
-        timeLockConstant = timeLockConstant_;
-        hsf_.safeTransferFrom(msg.sender, address(this), totalHsfToDist);
+        require(_endTime > _startTime, "HF: endTime before startTime");
+        hsf = _hsf;
+        startTime = _startTime;
+        endTime = _endTime;
+        maxTimeLock = _maxTimeLock;
+        timeLockMultiplier = _timeLockMultiplier;
+        timeLockConstant = _timeLockConstant;
+        _hsf.safeTransferFrom(msg.sender, address(this), _totalHsfToDistribute);
 
         /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
            the maths */
         // ds = (2 * s) / (te * (r + 1))
-        uint256 startDist_ = totalHsfToDist.mul(2).mul(SCALE).mul(SCALE).div(
-            (endTime_ - startTime_).mul(endDistFrac.add(SCALE))
-        );
+        uint256 startDistribution_ = _totalHsfToDistribute
+            .mul(2)
+            .mul(SCALE)
+            .mul(SCALE)
+            .div(
+                (_endTime - _startTime).mul(_endDistributionFraction.add(SCALE))
+            );
         // -m = ds * (1 - r) / te
-        distSlope = startDist_.mul(SCALE.sub(endDistFrac)).div(
-            (endTime_ - startTime_).mul(SCALE)
-        );
-        startDist = startDist_;
+        distributionSlope = startDistribution_
+            .mul(SCALE.sub(_endDistributionFraction))
+            .div((_endTime - _startTime).mul(SCALE));
+        startDistribution = startDistribution_;
     }
 
     modifier notDisabled {
@@ -121,84 +125,84 @@ contract HoneyFarm is Ownable, ERC721 {
     }
 
     function poolLength() external view returns (uint256) {
-        return _pools.length();
+        return pools.length();
     }
 
-    function getPoolByIndex(uint256 index)
+    function getPoolByIndex(uint256 _index)
         external
         view
         returns(
             IERC20 poolToken,
-            uint256 allocPoint,
+            uint256 allocation,
             uint256 lastRewardTimestamp,
             uint256 accHsfPerShare,
             uint256 totalShares
         )
     {
-        poolToken = IERC20(_pools.at(index));
+        poolToken = IERC20(pools.at(_index));
         PoolInfo storage pool = poolInfo[poolToken];
-        allocPoint = pool.allocPoint;
+        allocation = pool.allocation;
         lastRewardTimestamp = pool.lastRewardTimestamp;
         accHsfPerShare = pool.accHsfPerShare;
         totalShares = pool.totalShares;
     }
 
-    function disableContract(address tokenRecipient)
+    function disableContract(address _tokenRecipient)
         external
         onlyOwner
         notDisabled
     {
         massUpdatePools();
         uint256 remainingTokens = getDist(block.timestamp, endTime);
-        _safeHsfTransfer(tokenRecipient, remainingTokens.div(SCALE));
+        _safeHsfTransfer(_tokenRecipient, remainingTokens.div(SCALE));
         contractDisabledAt = block.timestamp;
         emit Disabled();
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
     function add(
-        uint256 allocPoint,
-        IERC20 lpToken
+        IERC20 _lpToken,
+        uint256 _allocation
     ) public onlyOwner notDisabled {
         require(
             address(referralRewarder) != address(0),
             "HF: Referral not setup yet"
         );
         massUpdatePools();
-        require(_pools.add(address(lpToken)), "HF: LP pool already exists");
+        require(pools.add(address(_lpToken)), "HF: LP pool already exists");
         uint256 lastRewardTimestamp = Math.max(block.timestamp, startTime);
-        totalAllocPoint = totalAllocPoint.add(allocPoint);
-        poolInfo[lpToken] = PoolInfo({
-            allocPoint: allocPoint,
+        totalAllocationPoints = totalAllocationPoints.add(_allocation);
+        poolInfo[_lpToken] = PoolInfo({
+            allocation: _allocation,
             lastRewardTimestamp: lastRewardTimestamp,
             accHsfPerShare: 0,
             totalShares: 0
         });
-        emit PoolAdded(lpToken, allocPoint);
+        emit PoolAdded(_lpToken, _allocation);
     }
 
     // Update the given pool's allocation point. Can only be called by the owner.
     function set(
-        IERC20 poolToken,
-        uint256 allocPoint
+        IERC20 _poolToken,
+        uint256 _allocation
     ) public onlyOwner notDisabled {
-        require(_pools.contains(address(poolToken)), "HF: Non-existant pool");
+        require(pools.contains(address(_poolToken)), "HF: Non-existant pool");
         massUpdatePools();
-        totalAllocPoint = totalAllocPoint.sub(poolInfo[poolToken].allocPoint).add(
-            allocPoint
-        );
-        poolInfo[poolToken].allocPoint = allocPoint;
-        emit PoolUpdated(poolToken, allocPoint);
+        totalAllocationPoints = totalAllocationPoints
+            .sub(poolInfo[_poolToken].allocation)
+            .add(_allocation);
+        poolInfo[_poolToken].allocation = _allocation;
+        emit PoolUpdated(_poolToken, _allocation);
     }
 
     // get tokens to be distributed between two timestamps scaled by SCALE
-    function getDist(uint256 from, uint256 to)
+    function getDist(uint256 _from, uint256 _to)
         public
         view
         returns (uint256)
     {
-        from = Math.max(startTime, from);
-        to = Math.min(to, contractDisabledAt == 0 ? endTime : contractDisabledAt);
+        uint256 from = Math.max(startTime, _from);
+        uint256 to = Math.min(_to, contractDisabledAt == 0 ? endTime : contractDisabledAt);
 
         if (from > to) return uint256(0);
 
@@ -209,70 +213,70 @@ contract HoneyFarm is Ownable, ERC721 {
            the maths */
         // d(t1, t2) = (t2 - t1) * (2 * ds - (-m) * (t2 + t1)) / 2
         return to.sub(from).mul(
-            startDist.mul(2).sub(distSlope.mul(from.add(to)))
-        ).div(2);
+            startDistribution.mul(2).sub(distributionSlope.mul(from.add(to)))
+        ) / 2;
     }
 
-    function getTimeMultiple(uint256 unlockTime) public view returns(uint256) {
-        if (unlockTime == 0) return SCALE;
-        uint256 timeDelta = unlockTime.sub(block.timestamp);
+    function getTimeMultiple(uint256 _unlockTime) public view returns(uint256) {
+        if (_unlockTime == 0) return SCALE;
+        uint256 timeDelta = _unlockTime.sub(block.timestamp);
         return timeDelta.mul(timeLockMultiplier).add(timeLockConstant);
     }
 
     // View function to see pending HSFs on frontend.
-    function pendingHsf(uint256 depositId)
+    function pendingHsf(uint256 _depositId)
         external
         view
         returns (uint256)
     {
-        DepositInfo storage deposit = depositInfo[depositId];
+        DepositInfo storage deposit = depositInfo[_depositId];
         PoolInfo storage pool = poolInfo[deposit.pool];
         return _getPendingHsf(deposit, pool);
     }
 
     // Deposit LP tokens into the farm to earn HSF
     function createDeposit(
-        IERC20 poolToken,
-        uint256 amount,
-        uint256 unlockTime,
-        address referrer
+        IERC20 _poolToken,
+        uint256 _amount,
+        uint256 _unlockTime,
+        address _referrer
     )
         external notDisabled
     {
-        require(amount > 0, "HF: Must deposit something");
+        require(_amount > 0, "HF: Must deposit something");
         require(
-            unlockTime == 0 || unlockTime > block.timestamp,
+            _unlockTime == 0 || _unlockTime > block.timestamp,
             "HF: Invalid unlock time"
         );
-        require(_pools.contains(address(poolToken)), "HF: Non-existant pool");
+        require(pools.contains(address(_poolToken)), "HF: Non-existant pool");
         require(
-            unlockTime == 0 || unlockTime.sub(block.timestamp) <= maxTimeLock,
+            _unlockTime == 0 || _unlockTime.sub(block.timestamp) <= maxTimeLock,
             "HF: Lock time exceeds maximum"
         );
-        PoolInfo storage pool = poolInfo[poolToken];
-        updatePool(poolToken);
-        poolToken.safeTransferFrom(
+        PoolInfo storage pool = poolInfo[_poolToken];
+        updatePool(_poolToken);
+        _poolToken.safeTransferFrom(
             address(msg.sender),
             address(this),
-            amount
+            _amount
         );
         uint256 newDepositId = totalDeposits++;
         DepositInfo storage newDeposit = depositInfo[newDepositId];
-        newDeposit.amount = amount;
-        newDeposit.pool = poolToken;
-        newDeposit.referrer = referrer;
-        _resetRewardAccs(newDeposit, pool, amount, unlockTime);
+        newDeposit.amount = _amount;
+        newDeposit.pool = _poolToken;
+        newDeposit.referrer = _referrer;
+        _resetRewardAccs(newDeposit, pool, _amount, _unlockTime);
         _safeMint(msg.sender, newDepositId);
 
-        if (referrer != address(0)) {
-            emit Referred(referrer, newDepositId);
+        if (_referrer != address(0)) {
+            emit Referred(_referrer, newDepositId);
         }
     }
 
     // Withdraw LP tokens from HoneyFarm along with reward
-    function closeDeposit(uint256 depositId) external {
-        require(ownerOf(depositId) == msg.sender, "HF: Must be owner to withdraw");
-        DepositInfo storage deposit = depositInfo[depositId];
+    function closeDeposit(uint256 _depositId) external {
+        require(ownerOf(_depositId) == msg.sender, "HF: Must be owner to withdraw");
+        DepositInfo storage deposit = depositInfo[_depositId];
         require(
             deposit.unlockTime == 0 ||
             deposit.unlockTime <= block.timestamp ||
@@ -285,19 +289,19 @@ contract HoneyFarm is Ownable, ERC721 {
 
         uint256 pending = _getPendingHsf(deposit, pool);
         pool.totalShares = pool.totalShares.sub(deposit.rewardShare);
-        _burn(depositId);
+        _burn(_depositId);
         _rewardReferrer(deposit.referrer, pending);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
     }
 
-    function setReferralRewarder(address referralRewarder_) external onlyOwner {
+    function setReferralRewarder(address _referralRewarder) external onlyOwner {
         require(address(referralRewarder) == address(0), "HF: HRP already set");
         require(
-            Ownable(referralRewarder_).owner() == address(this),
+            Ownable(_referralRewarder).owner() == address(this),
             "HF: Not yet owner of HRP"
         );
-        referralRewarder = ReferralRewarder(referralRewarder_);
+        referralRewarder = ReferralRewarder(_referralRewarder);
     }
 
     function withdrawRewards(uint256 depositId) external {
@@ -317,27 +321,27 @@ contract HoneyFarm is Ownable, ERC721 {
         _safeHsfTransfer(msg.sender, pendingRewards);
     }
 
-    function downgradeExpired(uint256 depositId) public {
-        DepositInfo storage deposit = depositInfo[depositId];
+    function downgradeExpired(uint256 _depositId) public {
+        DepositInfo storage deposit = depositInfo[_depositId];
         require(deposit.unlockTime > 0, "HF: no lock to expire");
         require(
             deposit.unlockTime <= block.timestamp,
             "HF: deposit has not expired yet"
         );
-        _downgradeExpired(depositId);
+        _downgradeExpired(_depositId);
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
-        uint256 length = _pools.length();
+        uint256 length = pools.length();
         for (uint256 pid = 0; pid < length; pid++) {
-            updatePool(IERC20(_pools.at(pid)));
+            updatePool(IERC20(pools.at(pid)));
         }
     }
 
     // Update reward variables of the given pool to be up-to-date.
-    function updatePool(IERC20 poolToken) public {
-        PoolInfo storage pool = poolInfo[poolToken];
+    function updatePool(IERC20 _poolToken) public {
+        PoolInfo storage pool = poolInfo[_poolToken];
         if (block.timestamp <= pool.lastRewardTimestamp) {
             return;
         }
@@ -347,67 +351,67 @@ contract HoneyFarm is Ownable, ERC721 {
             return;
         }
         uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
-        uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 hsfReward = dist.mul(pool.allocation).div(totalAllocationPoints);
         uint256 poolScaledRewards = hsfReward.div(totalShares);
         pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
         pool.lastRewardTimestamp = block.timestamp;
     }
 
-    function _rewardReferrer(address referrer, uint256 reward) internal {
-        if (referrer != address(0)) {
-            referralRewarder.distributeReward(referrer, reward);
+    function _rewardReferrer(address _referrer, uint256 _reward) internal {
+        if (_referrer != address(0)) {
+            referralRewarder.distributeReward(_referrer, _reward);
         }
     }
 
-    function _downgradeExpired(uint256 depositId) internal {
-        DepositInfo storage deposit = depositInfo[depositId];
+    function _downgradeExpired(uint256 _depositId) internal {
+        DepositInfo storage deposit = depositInfo[_depositId];
         IERC20 poolToken = deposit.pool;
         PoolInfo storage pool = poolInfo[poolToken];
         updatePool(poolToken);
         deposit.setRewards = _getPendingHsf(deposit, pool);
         _resetRewardAccs(deposit, pool, deposit.amount, 0);
-        emit DepositDowngraded(msg.sender, depositId);
+        emit DepositDowngraded(msg.sender, _depositId);
     }
 
     function _getPendingHsf(
-        DepositInfo storage deposit,
-        PoolInfo storage pool
+        DepositInfo storage _deposit,
+        PoolInfo storage _pool
     )
         internal
         view
         returns(uint256)
     {
-        uint256 accHsfPerShare = pool.accHsfPerShare;
-        uint256 totalShares = pool.totalShares;
-        if (block.timestamp > pool.lastRewardTimestamp && totalShares != 0) {
-            uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
-            uint256 hsfReward = dist.mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 accHsfPerShare = _pool.accHsfPerShare;
+        uint256 totalShares = _pool.totalShares;
+        if (block.timestamp > _pool.lastRewardTimestamp && totalShares != 0) {
+            uint256 dist = getDist(_pool.lastRewardTimestamp, block.timestamp);
+            uint256 hsfReward = dist.mul(_pool.allocation).div(totalAllocationPoints);
             accHsfPerShare = accHsfPerShare.add(hsfReward.div(totalShares));
         }
-        return deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
-            deposit.rewardDebt
-        ).add(deposit.setRewards);
+        return _deposit.rewardShare.mul(accHsfPerShare).div(SCALE).sub(
+            _deposit.rewardDebt
+        ).add(_deposit.setRewards);
     }
 
     function _resetRewardAccs(
-        DepositInfo storage deposit,
-        PoolInfo storage pool,
-        uint256 amount,
-        uint256 unlockTime
+        DepositInfo storage _deposit,
+        PoolInfo storage _pool,
+        uint256 _amount,
+        uint256 _unlockTime
     )
         internal
     {
-        deposit.unlockTime = unlockTime;
-        uint256 newShares = amount.mul(getTimeMultiple(unlockTime)).div(SCALE);
-        deposit.rewardDebt = newShares.mul(pool.accHsfPerShare).div(SCALE);
-        pool.totalShares = pool.totalShares.sub(deposit.rewardShare).add(newShares);
-        deposit.rewardShare = newShares;
+        _deposit.unlockTime = _unlockTime;
+        uint256 newShares = _amount.mul(getTimeMultiple(_unlockTime)).div(SCALE);
+        _deposit.rewardDebt = newShares.mul(_pool.accHsfPerShare).div(SCALE);
+        _pool.totalShares = _pool.totalShares.sub(_deposit.rewardShare).add(newShares);
+        _deposit.rewardShare = newShares;
     }
 
     /* Safe hsf transfer function, just in case if rounding error causes pool
        to not have enough HSFs. */
-    function _safeHsfTransfer(address to, uint256 amount) internal {
+    function _safeHsfTransfer(address _to, uint256 _amount) internal {
         uint256 hsfBal = hsf.balanceOf(address(this));
-        hsf.transfer(to, Math.min(amount, hsfBal));
+        hsf.transfer(_to, Math.min(_amount, hsfBal));
     }
 }
