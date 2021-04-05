@@ -38,7 +38,7 @@ contract HoneyFarm is Ownable, ERC721 {
     }
 
     // What fractional numbers are scaled by
-    uint256 public constant SCALE = 1 ether;
+    uint256 public constant SCALE = 1e18;
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
     // referral points token to keep track of referrals
