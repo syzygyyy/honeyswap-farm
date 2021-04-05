@@ -59,7 +59,8 @@ describe('HoneyFarm', () => {
       { from: admin1 }
     )
     this.SCALE = await this.farm.SCALE()
-    this.getFarmDist = async (start, end) => (await this.farm.getDist(start, end)).div(this.SCALE)
+    this.getFarmDist = async (start, end) =>
+      (await this.farm.getDistribution(start, end)).div(this.SCALE)
 
     this.errorTime = time.duration.seconds(2)
     this.getDistError = (edgeTime) => this.getFarmDist(edgeTime, edgeTime.add(this.errorTime))
@@ -162,11 +163,11 @@ describe('HoneyFarm', () => {
       // allow rewards to accrue and update pools
       const skipTo = startTime.add(time.duration.days(2))
       await time.increaseTo(skipTo)
-      const expectedRewardPerShare = (await this.farm.getDist(startTime, skipTo)).div(
+      const expectedRewardPerShare = (await this.farm.getDistribution(startTime, skipTo)).div(
         deposit1.add(deposit2)
       )
       const allowedShareError = (
-        await this.farm.getDist(skipTo, skipTo.add(time.duration.seconds(2)))
+        await this.farm.getDistribution(skipTo, skipTo.add(time.duration.seconds(2)))
       ).div(deposit1.add(deposit2))
       await this.farm.updatePool(poolToken)
 
@@ -425,7 +426,7 @@ describe('HoneyFarm', () => {
       const depositInfo2 = await this.farm.depositInfo(new BN('1'))
       expect(depositInfo2.amount).to.be.bignumber.equal(mintAmount2)
       expect(depositInfo2.rewardShare).to.be.bignumber.equal(mintAmount2)
-      const firstThirdDist = await this.farm.getDist(startTime, startTime.add(third))
+      const firstThirdDist = await this.farm.getDistribution(startTime, startTime.add(third))
       const convDebt = depositInfo2.rewardDebt.mul(mintAmount1).div(mintAmount2)
       expectEqualWithinFraction(
         convDebt,
@@ -439,7 +440,7 @@ describe('HoneyFarm', () => {
       await time.increaseTo(twoThirdsTime)
       await this.farm.closeDeposit(new BN('1'), { from: user2 })
 
-      const middleThirdDist = await this.farm.getDist(startTime.add(third), twoThirdsTime)
+      const middleThirdDist = await this.farm.getDistribution(startTime.add(third), twoThirdsTime)
       const user2Share = middleThirdDist.mul(mintAmount2).div(totalMinted)
       expectEqualWithinFraction(
         await user2Tracker.delta(),
@@ -452,7 +453,7 @@ describe('HoneyFarm', () => {
       const endTime = await this.farm.endTime()
       await time.increaseTo(endTime)
       await this.farm.closeDeposit(new BN('0'), { from: user1 })
-      const lastThirdDist = await this.farm.getDist(twoThirdsTime, endTime)
+      const lastThirdDist = await this.farm.getDistribution(twoThirdsTime, endTime)
       const user1MiddleShare = middleThirdDist.mul(mintAmount1).div(totalMinted)
       expectEqualWithinFraction(
         await user1Tracker.delta(),
@@ -624,7 +625,10 @@ describe('HoneyFarm', () => {
       expect(poolInfo.totalShares).to.be.bignumber.equal(this.mintAmount)
 
       const expectedDebt = poolInfo.accHsfPerShare.mul(this.mintAmount).div(this.SCALE)
-      const expectedRewards = await this.farm.getDist(this.startTime, poolInfo.lastRewardTimestamp)
+      const expectedRewards = await this.farm.getDistribution(
+        this.startTime,
+        poolInfo.lastRewardTimestamp
+      )
 
       expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
       expect(await user1xCombTracker.delta()).to.be.bignumber.equal(ZERO)
@@ -660,7 +664,7 @@ describe('HoneyFarm', () => {
       expect(await user1PoolTracker.delta()).to.be.bignumber.equal(this.mintAmount)
       expectEqualWithinError(
         await user1xCombTracker.delta(),
-        (await this.farm.getDist(this.startTime, targetTime)).div(this.SCALE),
+        (await this.farm.getDistribution(this.startTime, targetTime)).div(this.SCALE),
         this.maxError
       )
     })
@@ -723,7 +727,7 @@ describe('HoneyFarm', () => {
 
       expectEqualWithinFraction(
         await user1xCombTracker.get(),
-        (await this.farm.getDist(this.startTime, depositEnd)).div(this.SCALE),
+        (await this.farm.getDistribution(this.startTime, depositEnd)).div(this.SCALE),
         new BN('1'),
         bnE('1', '6'),
         'expect received total rewards match distribution'
@@ -807,7 +811,9 @@ describe('HoneyFarm', () => {
       const timeSkip = time.duration.days(2)
 
       // fill reward referrer only with half of the required rewards
-      const estRewards = (await this.farm.getDist(this.startTime, this.startTime.add(timeSkip)))
+      const estRewards = (
+        await this.farm.getDistribution(this.startTime, this.startTime.add(timeSkip))
+      )
         .mul(this.refRewardRate)
         .div(this.SCALE)
         .div(this.SCALE)

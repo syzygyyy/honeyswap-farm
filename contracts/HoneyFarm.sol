@@ -153,7 +153,7 @@ contract HoneyFarm is Ownable, ERC721 {
         notDisabled
     {
         massUpdatePools();
-        uint256 remainingTokens = getDist(block.timestamp, endTime);
+        uint256 remainingTokens = getDistribution(block.timestamp, endTime);
         _safeHsfTransfer(_tokenRecipient, remainingTokens.div(SCALE));
         contractDisabledAt = block.timestamp;
         emit Disabled();
@@ -196,7 +196,7 @@ contract HoneyFarm is Ownable, ERC721 {
     }
 
     // get tokens to be distributed between two timestamps scaled by SCALE
-    function getDist(uint256 _from, uint256 _to)
+    function getDistribution(uint256 _from, uint256 _to)
         public
         view
         returns (uint256)
@@ -350,7 +350,7 @@ contract HoneyFarm is Ownable, ERC721 {
             pool.lastRewardTimestamp = block.timestamp;
             return;
         }
-        uint256 dist = getDist(pool.lastRewardTimestamp, block.timestamp);
+        uint256 dist = getDistribution(pool.lastRewardTimestamp, block.timestamp);
         uint256 hsfReward = dist.mul(pool.allocation).div(totalAllocationPoints);
         uint256 poolScaledRewards = hsfReward.div(totalShares);
         pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
@@ -384,7 +384,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 accHsfPerShare = _pool.accHsfPerShare;
         uint256 totalShares = _pool.totalShares;
         if (block.timestamp > _pool.lastRewardTimestamp && totalShares != 0) {
-            uint256 dist = getDist(_pool.lastRewardTimestamp, block.timestamp);
+            uint256 dist = getDistribution(_pool.lastRewardTimestamp, block.timestamp);
             uint256 hsfReward = dist.mul(_pool.allocation).div(totalAllocationPoints);
             accHsfPerShare = accHsfPerShare.add(hsfReward.div(totalShares));
         }
