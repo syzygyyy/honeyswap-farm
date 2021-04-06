@@ -80,7 +80,7 @@ const expectEqualWithinFraction = (a, b, numerator, denominator, errorMsg) => {
 const expectEqualWithinError = (a, b, error, errorMsg) => {
   const diff = a.sub(b).abs()
   if (diff.gt(error)) {
-    expect(a).to.be.bignumber.equal(b, errorMsg ? errorMsg : 'no error message' )
+    expect(a).to.be.bignumber.equal(b, errorMsg === undefined ? errorMsg : 'no error message')
   }
 }
 
