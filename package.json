@@ -7,7 +7,8 @@
     "test": "test"
   },
   "scripts": {
-    "test": "mocha --exit --recursive --timeout 20000"
+    "test": "npm run compile && mocha --exit --recursive --timeout 20000",
+    "compile": "truffle compile"
   },
   "repository": {
     "type": "git",
@@ -27,6 +28,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^3.4.0-solc-0.7",
-    "@openzeppelin/test-environment": "^0.1.9"
+    "@openzeppelin/test-environment": "^0.1.9",
+    "truffle": "5.3.0"
   }
 }

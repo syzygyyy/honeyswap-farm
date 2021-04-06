@@ -10,15 +10,15 @@ import "@openzeppelin/contracts/math/Math.sol";
 contract ReferralRewarder is Ownable {
     using SafeMath for uint256;
 
-    uint256 public constant SCALE = 1 ether;
+    uint256 public constant SCALE = 1e18;
     IERC20 public immutable rewardToken;
     uint256 public immutable exchangeRate;
 
     event MissingReward(address indexed referrer, uint256 owedReward);
 
-    constructor(IERC20 rewardToken_, uint256 exchangeRate_) Ownable() {
-        rewardToken = rewardToken_;
-        exchangeRate = exchangeRate_;
+    constructor(IERC20 _rewardToken, uint256 _exchangeRate) Ownable() {
+        rewardToken = _rewardToken;
+        exchangeRate = _exchangeRate;
     }
 
     function distributeReward(address _referrer, uint256 _amount) external onlyOwner {
