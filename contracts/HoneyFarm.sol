@@ -147,6 +147,11 @@ contract HoneyFarm is Ownable, ERC721 {
         totalShares = pool.totalShares;
     }
 
+    // underscore placed after to avoid collide with the ERC721._baseURI property
+    function setBaseURI(string memory baseURI_) external onlyOwner {
+        _setBaseURI(baseURI_);
+    }
+
     function disableContract(address _tokenRecipient)
         external
         onlyOwner
@@ -244,6 +249,7 @@ contract HoneyFarm is Ownable, ERC721 {
         external notDisabled
     {
         require(_amount > 0, "HF: Must deposit something");
+        require(_unlockTime <= endTime, "HF: Unlock time after reward end");
         require(
             _unlockTime == 0 || _unlockTime > block.timestamp,
             "HF: Invalid unlock time"

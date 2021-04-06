@@ -546,6 +546,13 @@ describe('HoneyFarm', () => {
         await this.farm.closeDeposit(this.depositId, { from: user1 })
       })
     })
+    it('prevents deposits that end after distribution end from being created', async () => {
+      const depositEnd = this.endTime.add(time.duration.seconds(1))
+      await expectRevert(
+        this.farm.createDeposit(this.poolToken, this.mintAmount, depositEnd, ZERO_ADDRESS),
+        'HF: Unlock time after reward end'
+      )
+    })
     it('prevents deposits with 0 amount from being created', async () => {
       const depositDuration = time.duration.days(60)
       const depositEnd = (await time.latest()).add(depositDuration)
