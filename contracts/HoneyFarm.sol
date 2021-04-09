@@ -70,6 +70,9 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public immutable timeLockMultiplier;
     // constant added to the timeLockMultiplier scaled by SCALE
     uint256 public immutable timeLockConstant;
+    /* One time fee that is deducted from time-locked deposits given to whoever
+       downgrades it, scaled by SCALE */
+    uint256 public immutable downgradeFee;
     // whether this contract has been disabled
     uint256 public contractDisabledAt;
 
@@ -78,34 +81,32 @@ contract HoneyFarm is Ownable, ERC721 {
        is called */
     event PoolUpdated(IERC20 indexed poolToken, uint256 allocation);
     event Disabled();
-    event DepositDowngraded(address indexed downgrader, uint256 depositId);
+    event DepositDowngraded(
+        address indexed downgrader,
+        uint256 indexed depositId,
+        uint256 downgradeReward
+    );
     event Referred(address indexed referrer, uint256 depositId);
 
     // parameters passed as byte strings to mitigate stack too deep error
     constructor(
-        // IERC20 _hsf,
-        // uint256 _totalHsfToDistribute,
+        IERC20 _hsf,
         // uint256 _startTime,
         // uint256 _endTime,
+        // uint256 _totalHsfToDistribute,
         // uint256 _endDistributionFraction,
-        bytes memory _disitributionParameters,
         // uint256 _minTimeLock,
         // uint256 _maxTimeLock,
         // uint256 _timeLockMultiplier,
-        // uint256 _timeLockConstant
-        bytes memory _depositParameters
+        // uint256 _timeLockConstant,
+        // uint256 _downgradeFee
+        uint256[9] memory _parameters
     ) ERC721("HoneyFarm Deposits v1", "HFD") {
-        (
-            address _hsfAddress,
-            uint256 _totalHsfToDistribute,
-            uint256 _startTime,
-            uint256 _endTime,
-            uint256 _endDistributionFraction
-        ) = abi.decode(_disitributionParameters, (
-            address, uint256, uint256, uint256, uint256
-        ));
+        uint256 _startTime = _parameters[0];
+        uint256 _endTime = _parameters[1];
         require(_endTime > _startTime, "HF: endTime before startTime");
-        IERC20 _hsf = IERC20(_hsfAddress);
+        uint256 _totalHsfToDistribute = _parameters[2];
+        uint256 _endDistributionFraction = _parameters[3];
         hsf = _hsf;
         startTime = _startTime;
         endTime = _endTime;
@@ -127,16 +128,14 @@ contract HoneyFarm is Ownable, ERC721 {
             .div((_endTime - _startTime).mul(SCALE));
         startDistribution = startDistribution_;
 
-        (
-            uint256 _minTimeLock,
-            uint256 _maxTimeLock,
-            uint256 _timeLockMultiplier,
-            uint256 _timeLockConstant
-        ) = abi.decode(_depositParameters, (uint256, uint256, uint256, uint256));
+        uint256 _minTimeLock = _parameters[4];
+        uint256 _maxTimeLock = _parameters[5];
+        require(_minTimeLock < _maxTimeLock, "HF: invalid lock limits");
         minTimeLock = _minTimeLock;
         maxTimeLock = _maxTimeLock;
-        timeLockMultiplier = _timeLockMultiplier;
-        timeLockConstant = _timeLockConstant;
+        timeLockMultiplier = _parameters[6];
+        timeLockConstant = _parameters[7];
+        downgradeFee = _parameters[8];
     }
 
     modifier notDisabled {
@@ -396,8 +395,12 @@ contract HoneyFarm is Ownable, ERC721 {
         PoolInfo storage pool = poolInfo[poolToken];
         updatePool(poolToken);
         deposit.setRewards = _getPendingHsf(deposit, pool);
-        _resetRewardAccs(deposit, pool, deposit.amount, 0);
-        emit DepositDowngraded(msg.sender, _depositId);
+        uint256 amount = deposit.amount;
+        _resetRewardAccs(deposit, pool, amount, 0);
+        uint256 downgradeReward = amount.mul(downgradeFee).div(SCALE);
+        poolToken.safeTransfer(msg.sender, downgradeReward);
+        deposit.amount = amount.sub(downgradeReward);
+        emit DepositDowngraded(msg.sender, _depositId, downgradeReward);
     }
 
     function _getPendingHsf(
