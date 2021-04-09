@@ -342,6 +342,14 @@ describe('HoneyFarm', () => {
         this.farm.ownerOf(expectedDepositId),
         'ERC721: owner query for nonexistent token'
       )
+      const depositInfo = await this.farm.depositInfo(expectedDepositId)
+      expect(depositInfo.amount).to.be.bignumber.equal(ZERO)
+      expect(depositInfo.rewardDebt).to.be.bignumber.equal(ZERO)
+      expect(depositInfo.unlockTime).to.be.bignumber.equal(ZERO)
+      expect(depositInfo.rewardShare).to.be.bignumber.equal(ZERO)
+      expect(depositInfo.setRewards).to.be.bignumber.equal(ZERO)
+      expect(depositInfo.pool).to.equal(ZERO_ADDRESS)
+      expect(depositInfo.referrer).to.equal(ZERO_ADDRESS)
     })
     it('distributes proportional to deposit size', async () => {
       await this.farm.add(this.lpToken1.address, new BN('20'), {

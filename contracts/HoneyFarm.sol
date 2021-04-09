@@ -320,6 +320,7 @@ contract HoneyFarm is Ownable, ERC721 {
         _rewardReferrer(deposit.referrer, pending);
         _safeHsfTransfer(msg.sender, pending);
         poolToken.safeTransfer(msg.sender, deposit.amount);
+        delete depositInfo[_depositId];
     }
 
     function setReferralRewarder(address _referralRewarder) external onlyOwner {
