@@ -1,4 +1,4 @@
-const { contract, accounts } = require('@openzeppelin/test-environment')
+const { contract, accounts, web3 } = require('@openzeppelin/test-environment')
 const { time, constants, expectEvent, expectRevert } = require('@openzeppelin/test-helpers')
 const { MAX_UINT256, ZERO_ADDRESS } = constants
 const {
@@ -12,6 +12,7 @@ const {
   expectEqualWithinError,
   bnE
 } = require('./utils')
+const { packArgs } = require('../src/utils/')(web3)
 const { expect } = require('chai')
 const BN = require('bn.js')
 
@@ -35,6 +36,7 @@ describe('HoneyFarm', () => {
     this.farmToken = await HSFToken.new({ from: admin1 })
 
     this.SCALE = ether('1')
+    this.minTime = time.duration.days(1)
     this.totalTime = time.duration.years(1)
     this.startDelta = time.duration.weeks(1)
     this.totalDist = bnPerc(await this.farmToken.totalSupply(), '50')
@@ -48,14 +50,17 @@ describe('HoneyFarm', () => {
     await this.farmToken.approve(farmAddr, this.totalDist, { from: admin1 })
 
     this.farm = await HoneyFarm.new(
-      this.farmToken.address,
-      this.totalDist,
-      this.startTime,
-      this.endTime,
-      bnPerc(this.SCALE, this.endDistFrac),
-      this.totalTime,
-      bnPerc(this.SCALE, '2').div(time.duration.weeks(4)),
-      this.SCALE,
+      ...packArgs(
+        this.farmToken.address,
+        this.totalDist,
+        this.startTime,
+        this.endTime,
+        bnPerc(this.SCALE, this.endDistFrac),
+        this.minTime,
+        this.totalTime,
+        bnPerc(this.SCALE, '2').div(time.duration.weeks(4)),
+        this.SCALE
+      ),
       { from: admin1 }
     )
     this.SCALE = await this.farm.SCALE()
@@ -545,6 +550,14 @@ describe('HoneyFarm', () => {
         expect(await time.latest()).to.be.bignumber.below(this.depositEnd)
         await this.farm.closeDeposit(this.depositId, { from: user1 })
       })
+    })
+    it('prevents deposits with too short lock-times from being created', async () => {
+      await time.increaseTo(this.startTime)
+      const depositEnd = this.startTime.add(this.minTime).sub(time.duration.minutes(1))
+      await expectRevert(
+        this.farm.createDeposit(this.poolToken, this.mintAmount, depositEnd, ZERO_ADDRESS),
+        'HF: Lock time too short'
+      )
     })
     it('prevents deposits that end after distribution end from being created', async () => {
       const depositEnd = this.endTime.add(time.duration.seconds(1))

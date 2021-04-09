@@ -58,6 +58,8 @@ contract HoneyFarm is Ownable, ERC721 {
     uint256 public immutable distributionSlope;
     // starting distribution rate / unit time scaled by SCALE
     uint256 public immutable startDistribution;
+    // minimum time someone can lock their liquidity for
+    uint256 public immutable minTimeLock;
     // maximum time someone can lock their liquidity for
     uint256 public immutable maxTimeLock;
     // time at which coins begin being distributed
@@ -79,27 +81,34 @@ contract HoneyFarm is Ownable, ERC721 {
     event DepositDowngraded(address indexed downgrader, uint256 depositId);
     event Referred(address indexed referrer, uint256 depositId);
 
+    // parameters passed as byte strings to mitigate stack too deep error
     constructor(
-        IERC20 _hsf,
-        uint256 _totalHsfToDistribute,
-        uint256 _startTime,
-        uint256 _endTime,
-        /* End distribution fraction:
-           represents how much less tokens to distribute at the end vs the
-           beginning scaled by SCALE. If it's 0.2 * SCALE then 80% less tokens
-           will be distributed per unit of time at the end vs beginning */
-        uint256 _endDistributionFraction,
-        uint256 _maxTimeLock,
-        uint256 _timeLockMultiplier,
-        uint256 _timeLockConstant
+        // IERC20 _hsf,
+        // uint256 _totalHsfToDistribute,
+        // uint256 _startTime,
+        // uint256 _endTime,
+        // uint256 _endDistributionFraction,
+        bytes memory _disitributionParameters,
+        // uint256 _minTimeLock,
+        // uint256 _maxTimeLock,
+        // uint256 _timeLockMultiplier,
+        // uint256 _timeLockConstant
+        bytes memory _depositParameters
     ) ERC721("HoneyFarm Deposits v1", "HFD") {
+        (
+            address _hsfAddress,
+            uint256 _totalHsfToDistribute,
+            uint256 _startTime,
+            uint256 _endTime,
+            uint256 _endDistributionFraction
+        ) = abi.decode(_disitributionParameters, (
+            address, uint256, uint256, uint256, uint256
+        ));
         require(_endTime > _startTime, "HF: endTime before startTime");
+        IERC20 _hsf = IERC20(_hsfAddress);
         hsf = _hsf;
         startTime = _startTime;
         endTime = _endTime;
-        maxTimeLock = _maxTimeLock;
-        timeLockMultiplier = _timeLockMultiplier;
-        timeLockConstant = _timeLockConstant;
         _hsf.safeTransferFrom(msg.sender, address(this), _totalHsfToDistribute);
 
         /* check readme at github.com/1Hive/honeyswap-farm for a breakdown of
@@ -117,6 +126,17 @@ contract HoneyFarm is Ownable, ERC721 {
             .mul(SCALE.sub(_endDistributionFraction))
             .div((_endTime - _startTime).mul(SCALE));
         startDistribution = startDistribution_;
+
+        (
+            uint256 _minTimeLock,
+            uint256 _maxTimeLock,
+            uint256 _timeLockMultiplier,
+            uint256 _timeLockConstant
+        ) = abi.decode(_depositParameters, (uint256, uint256, uint256, uint256));
+        minTimeLock = _minTimeLock;
+        maxTimeLock = _maxTimeLock;
+        timeLockMultiplier = _timeLockMultiplier;
+        timeLockConstant = _timeLockConstant;
     }
 
     modifier notDisabled {
@@ -255,10 +275,11 @@ contract HoneyFarm is Ownable, ERC721 {
             "HF: Invalid unlock time"
         );
         require(pools.contains(address(_poolToken)), "HF: Non-existant pool");
-        require(
-            _unlockTime == 0 || _unlockTime.sub(block.timestamp) <= maxTimeLock,
-            "HF: Lock time exceeds maximum"
-        );
+        if (_unlockTime != 0) {
+            uint256 lockDuration = _unlockTime.sub(block.timestamp);
+            require(minTimeLock <= lockDuration, "HF: Lock time too short");
+            require(lockDuration <= maxTimeLock, "HF: Lock time exceeds maximum");
+        }
         PoolInfo storage pool = poolInfo[_poolToken];
         updatePool(_poolToken);
         _poolToken.safeTransferFrom(
