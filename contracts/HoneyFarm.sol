@@ -293,11 +293,10 @@ contract HoneyFarm is Ownable, ERC721 {
         newDeposit.pool = _poolToken;
         newDeposit.referrer = _referrer;
         _resetRewardAccs(newDeposit, pool, _amount, _unlockTime);
-        _safeMint(msg.sender, newDepositId);
-
         if (_referrer != address(0)) {
             emit Referred(_referrer, newDepositId);
         }
+        _safeMint(msg.sender, newDepositId);
     }
 
     // Withdraw LP tokens from HoneyFarm along with reward
