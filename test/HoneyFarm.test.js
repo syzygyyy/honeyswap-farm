@@ -1,4 +1,4 @@
-const { contract, accounts, web3 } = require('@openzeppelin/test-environment')
+const { contract, accounts } = require('@openzeppelin/test-environment')
 const { time, constants, expectEvent, expectRevert } = require('@openzeppelin/test-helpers')
 const { MAX_UINT256, ZERO_ADDRESS } = constants
 const {
@@ -12,7 +12,6 @@ const {
   expectEqualWithinError,
   bnE
 } = require('./utils')
-const { packArgs } = require('../src/utils/')(web3)
 const { expect } = require('chai')
 const BN = require('bn.js')
 
@@ -44,23 +43,25 @@ describe('HoneyFarm', () => {
     const currentTime = await time.latest()
     this.startTime = currentTime.add(this.startDelta)
     this.endTime = this.startTime.add(this.totalTime)
+    this.rewardFeeFraction = new BN('2000') // 0.05%
 
     const nonce = await getTxNonce(this.farmToken.transactionHash)
     const farmAddr = getDetAddr(admin1, nonce + 2)
     await this.farmToken.approve(farmAddr, this.totalDist, { from: admin1 })
 
     this.farm = await HoneyFarm.new(
-      ...packArgs(
-        this.farmToken.address,
-        this.totalDist,
+      this.farmToken.address,
+      [
         this.startTime,
         this.endTime,
+        this.totalDist,
         bnPerc(this.SCALE, this.endDistFrac),
         this.minTime,
         this.totalTime,
         bnPerc(this.SCALE, '2').div(time.duration.weeks(4)),
-        this.SCALE
-      ),
+        this.SCALE,
+        this.SCALE.div(this.rewardFeeFraction)
+      ],
       { from: admin1 }
     )
     this.SCALE = await this.farm.SCALE()
@@ -482,6 +483,7 @@ describe('HoneyFarm', () => {
       this.poolToken = this.lpToken1.address
       await this.farm.add(this.poolToken, new BN('20'), { from: admin1 })
       this.mintAmount = ether('10')
+      this.expectedDowngradeReward = this.mintAmount.div(this.rewardFeeFraction)
       await this.lpToken1.mint(user1, this.mintAmount)
       await this.lpToken1.approve(this.farm.address, MAX_UINT256, { from: user1 })
     })
@@ -624,6 +626,8 @@ describe('HoneyFarm', () => {
     it('allows downgrading deposit who\'s time-lock has expired', async () => {
       const user1PoolTracker = await trackBalance(this.lpToken1, user1)
       const user1xCombTracker = await trackBalance(this.farmToken, user1)
+      const user2PoolTracker = await trackBalance(this.lpToken1, user2)
+      const user2xCombTracker = await trackBalance(this.farmToken, user2)
 
       const depositDuration = time.duration.days(60)
       const depositEnd = (await time.latest()).add(depositDuration)
@@ -646,7 +650,8 @@ describe('HoneyFarm', () => {
 
       expectEvent(receipt, 'DepositDowngraded', {
         downgrader: user2,
-        depositId
+        depositId,
+        downgradeReward: this.expectedDowngradeReward
       })
 
       const poolInfo = await this.farm.poolInfo(this.poolToken)
@@ -660,8 +665,13 @@ describe('HoneyFarm', () => {
 
       expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO)
       expect(await user1xCombTracker.delta()).to.be.bignumber.equal(ZERO)
+      expect(await user2PoolTracker.delta()).to.be.bignumber.equal(this.expectedDowngradeReward)
+      expect(await user2xCombTracker.delta()).to.be.bignumber.equal(ZERO)
       const depositInfo = await this.farm.depositInfo(depositId)
-      expect(depositInfo.amount).to.be.bignumber.equal(this.mintAmount, 'wrong amount')
+      expect(depositInfo.amount).to.be.bignumber.equal(
+        this.mintAmount.sub(this.expectedDowngradeReward),
+        'wrong amount'
+      )
       expect(depositInfo.rewardDebt).to.be.bignumber.equal(expectedDebt, 'wrong reward debt')
       expect(depositInfo.unlockTime).to.be.bignumber.equal(ZERO)
       expect(depositInfo.rewardShare).to.be.bignumber.equal(this.mintAmount, 'wrong share')
@@ -689,7 +699,9 @@ describe('HoneyFarm', () => {
       // check successful closing
       expectEvent(receipt, 'Transfer', { from: user1, to: ZERO_ADDRESS, tokenId: depositId })
       await expectRevert(this.farm.ownerOf(depositId), 'ERC721: owner query for nonexistent token')
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(this.mintAmount)
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(
+        this.mintAmount.sub(this.expectedDowngradeReward)
+      )
       expectEqualWithinError(
         await user1xCombTracker.delta(),
         (await this.farm.getDistribution(this.startTime, targetTime)).div(this.SCALE),
@@ -748,8 +760,15 @@ describe('HoneyFarm', () => {
         bnE('1', '6'),
         'wrong rewards received'
       )
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(ZERO, 'received pool tokens')
-      expect(receipt, 'DepositDowngraded', { downgrader: user1, depositId })
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(
+        this.expectedDowngradeReward,
+        'received pool tokens'
+      )
+      expect(receipt, 'DepositDowngraded', {
+        downgrader: user1,
+        depositId,
+        downgradeReward: this.expectedDowngradeReward
+      })
       pendingRewards = await this.farm.pendingHsf(depositId)
       expectEqualWithinError(pendingRewards, ZERO, this.maxError, 'still has pending rewards')
 
@@ -787,7 +806,9 @@ describe('HoneyFarm', () => {
         bnE('1', '6'),
         'still has pending rewards (2)'
       )
-      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(this.mintAmount)
+      expect(await user1PoolTracker.delta()).to.be.bignumber.equal(
+        this.mintAmount.sub(this.expectedDowngradeReward)
+      )
       expectEvent(receipt, 'Transfer', { from: user1, to: ZERO_ADDRESS, tokenId: depositId })
 
       await expectRevert(
