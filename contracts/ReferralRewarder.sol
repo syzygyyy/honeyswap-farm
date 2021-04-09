@@ -28,7 +28,7 @@ contract ReferralRewarder is Ownable {
             SafeERC20.safeTransfer(rewardToken, _referrer, reward);
         } else if (currentReserves > 0) {
             SafeERC20.safeTransfer(rewardToken, _referrer, currentReserves);
-            emit MissingReward(_referrer, currentReserves - reward);
+            emit MissingReward(_referrer,  reward - currentReserves);
         } else {
             emit MissingReward(_referrer, reward);
         }

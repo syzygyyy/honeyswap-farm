@@ -866,7 +866,7 @@ describe('HoneyFarm', () => {
       const expectedTotalReward = userReward.mul(this.refRewardRate).div(this.SCALE)
       const refReward = await referrerTracker.delta()
       expect(refReward).to.be.bignumber.equal(refReserves)
-      expectEvent.inTransaction(receipt.tx, this.referralRewarder, 'MissingReward', {
+      await expectEvent.inTransaction(receipt.tx, this.referralRewarder, 'MissingReward', {
         referrer,
         owedReward: expectedTotalReward.sub(refReward)
       })
