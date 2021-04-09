@@ -330,13 +330,13 @@ contract HoneyFarm is Ownable, ERC721 {
         referralRewarder = ReferralRewarder(_referralRewarder);
     }
 
-    function withdrawRewards(uint256 depositId) external {
-        require(ownerOf(depositId) == msg.sender, "HF: Must be owner of deposit");
-        DepositInfo storage deposit = depositInfo[depositId];
+    function withdrawRewards(uint256 _depositId) external {
+        require(ownerOf(_depositId) == msg.sender, "HF: Must be owner of deposit");
+        DepositInfo storage deposit = depositInfo[_depositId];
         PoolInfo storage pool = poolInfo[deposit.pool];
         uint256 _unlockTime = deposit.unlockTime;
         if (_unlockTime > 0 && _unlockTime <= block.timestamp) {
-            _downgradeExpired(depositId);
+            _downgradeExpired(_depositId);
         } else {
             updatePool(deposit.pool);
         }
