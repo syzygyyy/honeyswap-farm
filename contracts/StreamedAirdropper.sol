@@ -74,9 +74,10 @@ contract StreamedAirdropper {
 
         uint256 lastWithdraw = Math.max(distributionStart, realLastWithdraw);
         uint256 currentTime = Math.min(distributionEnd, block.timestamp);
-        return amountLeft.mul(currentTime.sub(lastWithdraw)).div(
-            distributionEnd.sub(lastWithdraw)
-        );
+        uint256 elapsedTime = currentTime.sub(lastWithdraw);
+        uint256 remainingTime = distributionEnd.sub(lastWithdraw);
+        assert(elapsedTime <= remainingTime);
+        return amountLeft.mul(elapsedTime).div(remainingTime);
     }
 
     function _withdrawTokensTo(address _recipient) internal {
