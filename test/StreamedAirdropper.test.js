@@ -34,10 +34,28 @@ describe('StreamedAirdropper', () => {
 
     const receipt = await this.airdropper.addVesting(users, this.amounts, { from: admin1 })
     for (let i = 0; i < users.length; i++) {
-      expectEvent(receipt, 'VestingCreated', { user: users[i], amount: this.amounts[i] })
+      expectEvent(receipt, 'VestingAdded', { user: users[i], amount: this.amounts[i] })
     }
     expect(await adminBalTracker.delta()).to.be.bignumber.equal(total.neg())
     expect(await airdropperTracker.delta()).to.be.bignumber.equal(total)
+  })
+  it('does not overwrite values when vesting is added', async () => {
+    // attack setup
+    await this.token.mint(attacker1, ether('1'))
+    const overwriteAmount = new BN('1')
+    await this.token.approve(this.airdropper.address, overwriteAmount, { from: attacker1 })
+
+    // attack
+    const receipt = await this.airdropper.addVesting([user1], [overwriteAmount], {
+      from: attacker1
+    })
+
+    const userVesting = await this.airdropper.vestingUsers(user1)
+    expectEvent(receipt, 'VestingAdded', { user: user1, amount: overwriteAmount })
+    expect(userVesting.amountLeft).to.be.bignumber.equal(this.amounts[0].add(overwriteAmount))
+
+    // ensure that other tests work correctly
+    this.amounts[0] = this.amounts[0].add(overwriteAmount)
   })
   it('cannot withdraw without vesting', async () => {
     await expectRevert(this.airdropper.withdraw({ from: attacker1 }), 'SA: No pending tokens')

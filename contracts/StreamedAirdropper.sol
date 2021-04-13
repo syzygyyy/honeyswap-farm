@@ -21,7 +21,7 @@ contract StreamedAirdropper {
     uint256 public immutable distributionStart;
     uint256 public immutable distributionEnd;
 
-    event VestingCreated(address indexed user, uint256 amount);
+    event VestingAdded(address indexed user, uint256 amount);
     event Withdraw(
         address indexed user,
         address indexed recipient,
@@ -49,7 +49,7 @@ contract StreamedAirdropper {
             Vesting storage userVesting = vestingUsers[user];
             userVesting.amountLeft = userVesting.amountLeft.add(amount);
             totalAmount = totalAmount.add(amount);
-            emit VestingCreated(user, amount);
+            emit VestingAdded(user, amount);
         }
         token.safeTransferFrom(msg.sender, address(this), totalAmount);
     }
