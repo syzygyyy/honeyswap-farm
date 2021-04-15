@@ -33,6 +33,10 @@ contract StreamedAirdropper {
         uint256 _distributionStart,
         uint256 _distributionEnd
     ) {
+        require(
+            _distributionStart < _distributionEnd,
+            "SA: Invalid distribution time"
+        );
         token = _token;
         distributionStart = _distributionStart;
         distributionEnd = _distributionEnd;
@@ -76,7 +80,6 @@ contract StreamedAirdropper {
         uint256 currentTime = Math.min(distributionEnd, block.timestamp);
         uint256 elapsedTime = currentTime.sub(lastWithdraw);
         uint256 remainingTime = distributionEnd.sub(lastWithdraw);
-        assert(elapsedTime <= remainingTime);
         return amountLeft.mul(elapsedTime).div(remainingTime);
     }
 
@@ -86,7 +89,7 @@ contract StreamedAirdropper {
         Vesting storage userVesting = vestingUsers[msg.sender];
         userVesting.lastWithdraw = block.timestamp;
         userVesting.amountLeft = userVesting.amountLeft.sub(pendingTokens_);
-        token.transfer(_recipient, pendingTokens_);
+        token.safeTransfer(_recipient, pendingTokens_);
         emit Withdraw(msg.sender, _recipient, pendingTokens_);
     }
 }
