@@ -732,8 +732,10 @@ describe('HoneyFarm', () => {
 
       let pendingRewards = await this.farm.pendingHsf(depositId)
       let receipt = await this.farm.withdrawRewards(depositId, { from: user1 })
+      const receivedRewards = await user1xCombTracker.delta()
+      expectEvent(receipt, 'RewardsWithdraw', { depositId, rewardAmount: receivedRewards })
       expectEqualWithinFraction(
-        await user1xCombTracker.delta(),
+        receivedRewards,
         pendingRewards,
         new BN('1'),
         bnE('1', '6'),

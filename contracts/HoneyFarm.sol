@@ -87,6 +87,7 @@ contract HoneyFarm is Ownable, ERC721 {
         uint256 downgradeReward
     );
     event Referred(address indexed referrer, uint256 depositId);
+    event RewardsWithdraw(uint256 indexed depositId, uint256 rewardAmount);
 
     // parameters passed as byte strings to mitigate stack too deep error
     constructor(
@@ -345,6 +346,7 @@ contract HoneyFarm is Ownable, ERC721 {
         deposit.rewardDebt = deposit.rewardShare.mul(pool.accHsfPerShare).div(SCALE);
         _rewardReferrer(deposit.referrer, pendingRewards);
         _safeHsfTransfer(msg.sender, pendingRewards);
+        emit RewardsWithdraw(_depositId, pendingRewards);
     }
 
     function downgradeExpired(uint256 _depositId) public {
