@@ -70,7 +70,7 @@ async function getPairSnapshot(pairAddress) {
 async function main() {
   await connectDB()
   console.log('indexing transfers')
-  const pair = process.sys.argv[2]
+  const pair = process.argv[2]
   console.log('pair: ', pair)
   await getPairSnapshot(pair)
   console.log('done')

@@ -1,5 +1,9 @@
 module.exports = (web3) => {
   require('dotenv').config()
+  const {
+    constants: { ZERO_ADDRESS }
+  } = require('./utils')(web3)
+
   const mongoose = require('mongoose')
   const { Schema } = mongoose
 
@@ -38,7 +42,7 @@ module.exports = (web3) => {
   const Address = mongoose.model('Address', addressSchema)
 
   const isContract = async (address) => {
-    if (address === '0x0000000000000000000000000000000000000000') return false
+    if (address === ZERO_ADDRESS) return false
     address = web3.utils.toChecksumAddress(address)
 
     const dbRes = await Address.findOne({ address })
@@ -52,5 +56,8 @@ module.exports = (web3) => {
     return dbRes.isContract
   }
 
-  return { connectDB, Transfer, isContract, Address }
+  const ASCENDING = 1
+  const DESCENDING = -1
+
+  return { connectDB, Transfer, isContract, Address, ASCENDING, DESCENDING }
 }

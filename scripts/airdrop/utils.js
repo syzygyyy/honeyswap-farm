@@ -1,5 +1,9 @@
 module.exports = (web3) => {
   const fs = require('fs')
+  const BN = require('bn.js')
+
+  const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+  const SCALE = new BN('10').pow(new BN('18'))
 
   function loadJson(fp) {
     return JSON.parse(fs.readFileSync(fp))
@@ -98,6 +102,10 @@ module.exports = (web3) => {
     loadPair,
     removeDuplicateTransfers,
     getHighestBlock,
-    getDuplicates
+    getDuplicates,
+    constants: {
+      ZERO_ADDRESS,
+      SCALE
+    }
   }
 }
