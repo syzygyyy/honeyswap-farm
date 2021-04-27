@@ -46,5 +46,58 @@ module.exports = (web3) => {
     return eventChunks
   }
 
-  return { loadJson, saveJson, getPastLogs, factory, loadPair }
+  const getDuplicates = async (Model, match, uniqueFields) => {
+    const uniqueId = {}
+    for (let field of uniqueFields) {
+      uniqueId[field] = `$${field}`
+    }
+    const [res] = await Model.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: uniqueId,
+          dups: { $addToSet: '$_id' },
+          count: { $sum: 1 }
+        }
+      },
+      { $match: { count: { $gt: 1 } } },
+      { $project: { dups: { $slice: ['$dups', 1, { $subtract: [{ $size: '$dups' }, 1] }] } } },
+      { $unwind: '$dups' },
+      { $project: { _id: false, count: false } },
+      { $group: { _id: null, dups: { $push: '$dups' } } }
+    ])
+    return res
+  }
+
+  const removeDuplicateTransfers = async (Transfer, pairAddress) => {
+    const duplicates = await getDuplicates(Transfer, { pair: pairAddress }, [
+      'logIndex',
+      'blockNumber'
+    ])
+    if (duplicates) {
+      await Transfer.deleteMany({ _id: { $in: duplicates.dups } })
+      console.log(`removed ${duplicates.dups.length} duplicates`)
+    } else {
+      console.log('no duplicate transfers found')
+    }
+  }
+
+  const getHighestBlock = async (Transfer, pairAddress) => {
+    const res = await Transfer.aggregate([
+      { $group: { _id: { pair: '$pair' }, highestBlock: { $max: '$blockNumber' } } },
+      { $match: { _id: { pair: pairAddress } } }
+    ])
+    return res[0]
+  }
+
+  return {
+    loadJson,
+    saveJson,
+    getPastLogs,
+    factory,
+    loadPair,
+    removeDuplicateTransfers,
+    getHighestBlock,
+    getDuplicates
+  }
 }

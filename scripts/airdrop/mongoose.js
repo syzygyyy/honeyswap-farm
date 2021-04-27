@@ -32,19 +32,16 @@ module.exports = (web3) => {
   const Transfer = mongoose.model('Transfer', transferSchema)
 
   const addressSchema = new Schema({
-    address: { type: String, validate: isAddressValidator(), unique: true },
+    address: { type: String, validate: isAddressValidator() },
     isContract: Boolean
   })
   const Address = mongoose.model('Address', addressSchema)
 
-  const findOne = (query) =>
-    new Promise((resolve, reject) =>
-      query.findOne((err, res) => (err ? reject(err) : resolve(res)))
-    )
-
   const isContract = async (address) => {
+    if (address === '0x0000000000000000000000000000000000000000') return false
     address = web3.utils.toChecksumAddress(address)
-    const dbRes = await findOne(Address.where('address').equals(address))
+
+    const dbRes = await Address.findOne({ address })
     if (dbRes === null) {
       const code = await web3.eth.getCode(address)
       const hasCode = code.length >= 4
@@ -55,5 +52,5 @@ module.exports = (web3) => {
     return dbRes.isContract
   }
 
-  return { connectDB, Transfer, isContract }
+  return { connectDB, Transfer, isContract, Address }
 }
