@@ -2,4 +2,5 @@ node_modules
 .tern-port
 .ipynb_checkpoints
 *.flat.sol
+.env
 build
