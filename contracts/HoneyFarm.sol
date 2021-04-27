@@ -444,6 +444,6 @@ contract HoneyFarm is Ownable, ERC721 {
        to not have enough HSFs. */
     function _safeHsfTransfer(address _to, uint256 _amount) internal {
         uint256 hsfBal = hsf.balanceOf(address(this));
-        hsf.transfer(_to, Math.min(_amount, hsfBal));
+        hsf.safeTransfer(_to, Math.min(_amount, hsfBal));
     }
 }

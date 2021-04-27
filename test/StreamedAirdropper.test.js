@@ -1,7 +1,9 @@
 const { contract, accounts, web3 } = require('@openzeppelin/test-environment')
 const { time, constants, expectEvent, expectRevert } = require('@openzeppelin/test-helpers')
 const { MAX_UINT256 } = constants
-const { ZERO, trackBalance, ether, bnSum, expectEqualWithinFraction, bnE } = require('./utils')
+const { ZERO, trackBalance, ether, bnSum, expectEqualWithinFraction, bnE } = require('./utils')(
+  web3
+)
 const { expect } = require('chai')
 const BN = require('bn.js')
 
