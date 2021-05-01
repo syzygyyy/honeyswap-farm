@@ -36,7 +36,7 @@ module.exports = (web3) => {
   const Transfer = mongoose.model('Transfer', transferSchema)
 
   const addressSchema = new Schema({
-    address: { type: String, validate: isAddressValidator() },
+    address: { type: String, validate: isAddressValidator(), index: true },
     isContract: Boolean
   })
   const Address = mongoose.model('Address', addressSchema)
@@ -50,7 +50,7 @@ module.exports = (web3) => {
       const code = await web3.eth.getCode(address)
       const hasCode = code.length >= 4
       const newAddressEntry = new Address({ address, isContract: hasCode })
-      await newAddressEntry.save()
+      newAddressEntry.save()
       return hasCode
     }
     return dbRes.isContract

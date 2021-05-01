@@ -1,8 +1,7 @@
-const BN = require('bn.js')
 const web3 = require('./web3')()
 const {
   getPastLogs,
-  factory,
+  pairFactory,
   loadPair,
   removeDuplicateTransfers,
   getHighestBlock
@@ -16,7 +15,7 @@ async function getPairSnapshot(pairAddress) {
   }
 
   const pair = await loadPair(pairAddress)
-  const interval = 24 * 60 * 12 * 4
+  const interval = 24 * 60 * 12 * 2
 
   let firstBlock
   const res = await getHighestBlock(Transfer, pairAddress)
@@ -24,7 +23,7 @@ async function getPairSnapshot(pairAddress) {
   if (highestBlock) {
     firstBlock = highestBlock - interval
   } else {
-    const [createdEvent] = await factory.getPastEvents('PairCreated', {
+    const [createdEvent] = await pairFactory.getPastEvents('PairCreated', {
       filter: {
         token0: pair.token0,
         token1: pair.token1
@@ -53,10 +52,11 @@ async function getPairSnapshot(pairAddress) {
         to,
         value
       }
-      await isContract(from)
-      await isContract(to)
+      // await isContract(from)
+      // await isContract(to)
       const transfer = new Transfer(transferData)
-      await transfer.save()
+      // await transfer.save()
+      transfer.save()
       return transferData
     }
   )

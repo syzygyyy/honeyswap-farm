@@ -3,19 +3,27 @@ module.exports = (web3) => {
   const BN = require('bn.js')
 
   const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-  const SCALE = new BN('10').pow(new BN('18'))
+  const SCALE = new BN('10').pow(new BN('36'))
+
+  const ether = (wei) => new BN(web3.utils.toWei(wei.toString()))
 
   function loadJson(fp) {
     return JSON.parse(fs.readFileSync(fp))
   }
 
-  function saveJson(fp, obj) {
-    fs.writeFileSync(fp, JSON.stringify(obj))
+  function saveJson(fp, obj, jsonArgs) {
+    jsonArgs ??= []
+    fs.writeFileSync(fp, JSON.stringify(obj, ...jsonArgs))
   }
 
-  const factory = new web3.eth.Contract(
-    loadJson('./abis/factory-abi.json'),
+  const pairFactory = new web3.eth.Contract(
+    loadJson('./abis/pair-factory.json'),
     '0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7'
+  )
+
+  const uniFarmFactory = new web3.eth.Contract(
+    loadJson('./abis/unipool-factory.json'),
+    '0xE29DCD715D11455194D7d74c622F3c42C8a37040'
   )
 
   const loadPair = async (pairAddress) => {
@@ -98,8 +106,10 @@ module.exports = (web3) => {
     loadJson,
     saveJson,
     getPastLogs,
-    factory,
+    pairFactory,
+    uniFarmFactory,
     loadPair,
+    ether,
     removeDuplicateTransfers,
     getHighestBlock,
     getDuplicates,

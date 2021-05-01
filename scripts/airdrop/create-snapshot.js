@@ -1,31 +1,41 @@
+const BN = require('bn.js')
 const web3 = require('./web3')()
 const { connectDB, Transfer, ASCENDING } = require('./mongoose')(web3)
-const { constants, saveJson } = require('./utils')(web3)
+const { constants, saveJson, loadJson, uniFarmFactory, ether } = require('./utils')(web3)
 const { ZERO_ADDRESS, SCALE } = constants
-const BN = require('bn.js')
-const fs = require('fs')
 
-async function main() {
-  await connectDB()
-  const [, , pairAddress, outputFile] = process.argv
-  const matchPair = { $match: { pair: pairAddress } }
+const ZERO = new BN('0')
+const emtpyBnObj = () => {
+  const newObj = {}
+  newObj.get = (address) => newObj[address] ?? new BN('0')
+  return newObj
+}
 
-  let res = await Transfer.aggregate([
-    matchPair,
+async function getLogIndexParams(pair, toBlock) {
+  const match = { $match: { pair, blockNumber: { $lte: toBlock } } }
+  const logIndices = await Transfer.aggregate([
+    match,
     {
       $group: { _id: null, minLogIndex: { $min: '$logIndex' }, maxLogIndex: { $max: '$logIndex' } }
     }
   ])
-  if (res.length === 0) {
+  if (logIndices.length === 0) {
     console.error('ERROR: no transfers found')
     process.exit(1)
   }
-  const { minLogIndex, maxLogIndex } = res[0]
-  const logIndexDelta = minLogIndex
-  const blockNumShift = maxLogIndex - minLogIndex + 1
+  const { minLogIndex, maxLogIndex } = logIndices[0]
+  return {
+    logIndexDelta: minLogIndex,
+    blockNumShift: maxLogIndex - minLogIndex + 1
+  }
+}
 
-  res = await Transfer.aggregate([
-    matchPair,
+async function getPairRewards(pair, toBlock) {
+  const { pool: uniPoolFarm } = await uniFarmFactory.methods.pools(pair).call()
+
+  const { logIndexDelta, blockNumShift } = await getLogIndexParams(pair, toBlock)
+  const transfers = await Transfer.aggregate([
+    { $match: { pair } },
     {
       $project: {
         absoluteIndex: {
@@ -46,74 +56,27 @@ async function main() {
     { $project: { absoluteIndex: false } }
   ])
 
-  const emtpyBnObj = () => {
-    const newObj = {}
-    newObj.get = (address) => newObj[address] ?? new BN('0')
-    return newObj
-  }
-
-  const ONE = new BN('1').mul(SCALE)
-  const ZERO = new BN('0')
-
-  const rewards = {}
+  const newRewards = {}
   const balances = emtpyBnObj()
   const userDebt = emtpyBnObj()
   let totalSupply = ZERO
   let totalAccumulator = ZERO
 
-  const user1 = '0xa4e766870cb00f6f02f36754C0Da8995E0e5BA91'
-  const user2 = '0x5870b0527DeDB1cFBD9534343Feda1a41Ce47766'
-
-  const res2 = [
-    {
-      from: ZERO_ADDRESS,
-      to: user1,
-      value: new BN('2').mul(SCALE),
-      blockNumber: 2
-    },
-    {
-      from: user1,
-      to: user2,
-      value: new BN('1').mul(SCALE),
-      blockNumber: 3
-    },
-    {
-      from: user2,
-      to: ZERO_ADDRESS,
-      value: new BN('1').mul(SCALE),
-      blockNumber: 4
-    },
-    {
-      from: user1,
-      to: ZERO_ADDRESS,
-      value: new BN('1').mul(SCALE),
-      blockNumber: 4
-    },
-    {
-      from: ZERO_ADDRESS,
-      to: user2,
-      value: new BN('123').mul(SCALE),
-      blockNumber: 8
-    }
-  ]
-
-  const transfers = res
-
   let lastBlock = transfers[0].blockNumber
   // const finalBlock = 9
-  const finalBlock = transfers[transfers.length - 1].blockNumber
+  const finalBlock = toBlock
 
-  const setRewards = (user, newRewards) => {
-    if (newRewards.lt(ZERO)) {
+  const setRewards = (user, rewards) => {
+    if (rewards.lt(ZERO) || !BN.isBN(rewards)) {
       console.log('user: ', user)
-      console.log('newRewards: ', newRewards.toString())
+      console.log('rewards: ', rewards.toString())
       console.log('totalAccumulator: ', totalAccumulator.toString())
       console.log('lastBlock: ', lastBlock)
       console.log('totalSupply: ', totalSupply.toString())
       console.log('ERROR: Setting negative rewards')
       process.exit(1)
     }
-    rewards[user] = newRewards
+    newRewards[user] = rewards
   }
 
   const accountRewards = (user) => {
@@ -121,9 +84,7 @@ async function main() {
     if (userBalance.gt(ZERO)) {
       setRewards(
         user,
-        (rewards[user] ?? new BN('0'))
-          .add(totalAccumulator.mul(userBalance))
-          .sub(userDebt.get(user))
+        (newRewards[user] ?? ZERO).add(totalAccumulator.mul(userBalance)).sub(userDebt.get(user))
       )
     }
   }
@@ -146,7 +107,7 @@ async function main() {
     // increase accumulator
     if (totalSupply.gt(new BN('0'))) {
       const blocksPassed = new BN(currentBlockNumber - lastBlock)
-      totalAccumulator = totalAccumulator.add(blocksPassed.mul(ONE).mul(SCALE).div(totalSupply))
+      totalAccumulator = totalAccumulator.add(blocksPassed.mul(SCALE).div(totalSupply))
     }
     lastBlock = currentBlockNumber
   }
@@ -155,6 +116,10 @@ async function main() {
     value = new BN(value)
 
     updateAccumulator(blockNumber)
+
+    if (from === uniPoolFarm || to === uniPoolFarm) {
+      continue
+    }
 
     if (from === ZERO_ADDRESS) {
       // mint
@@ -174,17 +139,60 @@ async function main() {
     updateAccumulator(finalBlock)
   }
 
-  for (const user of Object.keys(rewards)) {
+  let totalRewards = ZERO
+  for (const user of Object.keys(newRewards)) {
     const userBalance = balances.get(user)
     if (userBalance.gt(ZERO)) {
       decreaseBalance(user, userBalance)
     }
-    const userRewards = rewards[user]
-    console.log(`${user}: ${web3.utils.fromWei(userRewards.div(SCALE))}`)
+    totalRewards = totalRewards.add(newRewards[user])
   }
-  saveJson(outputFile, rewards)
 
-  process.exit(0)
+  for (const [user, userRewards] of Object.entries(newRewards)) {
+    newRewards[user] = userRewards.mul(SCALE).div(totalRewards)
+  }
+
+  return newRewards
 }
 
-main()
+async function main() {
+  await connectDB()
+
+  const { totalTokens: directTotalTokens, toBlock, pairs: pairInput } = loadJson(
+    './snapshot-input.json'
+  )
+  const totalTokens = ether(directTotalTokens)
+  const pairs = {}
+
+  for (const [pair, weight] of Object.entries(pairInput)) {
+    pairs[web3.utils.toChecksumAddress(pair)] = ether(weight)
+  }
+  const rewards = {}
+
+  let totalPairWeight = ZERO
+  for (const [pair, weight] of Object.entries(pairs)) {
+    totalPairWeight = totalPairWeight.add(weight)
+    const newRewards = await getPairRewards(pair, toBlock)
+    for (const [user, userPairRewardsShare] of Object.entries(newRewards)) {
+      const additionalRewards = userPairRewardsShare.mul(totalTokens).mul(weight)
+      rewards[user] = (rewards[user] ?? ZERO).add(additionalRewards)
+    }
+  }
+
+  let totalGivenRewards = ZERO
+  for (const [user, userRewards] of Object.entries(rewards)) {
+    const actualRewards = userRewards.div(totalPairWeight).div(SCALE)
+    rewards[user] = actualRewards
+    totalGivenRewards = totalGivenRewards.add(actualRewards)
+  }
+
+  console.log('totalTokens: ', web3.utils.fromWei(totalTokens))
+  console.log('totalGivenRewards: ', web3.utils.fromWei(totalGivenRewards))
+
+  console.log('individual addresses:', Object.keys(rewards).length)
+
+  const outputFile = process.argv[2]
+  saveJson(outputFile, rewards, [null, 2])
+}
+
+main().then(() => process.exit(0))
