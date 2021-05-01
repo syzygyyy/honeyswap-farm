@@ -189,6 +189,10 @@ async function main() {
   console.log('totalTokens: ', web3.utils.fromWei(totalTokens))
   console.log('totalGivenRewards: ', web3.utils.fromWei(totalGivenRewards))
 
+  if (totalGivenRewards.gt(totalTokens)) {
+    throw new Error('Snapshot distributing too many tokens')
+  }
+
   console.log('individual addresses:', Object.keys(rewards).length)
 
   const outputFile = process.argv[2]
