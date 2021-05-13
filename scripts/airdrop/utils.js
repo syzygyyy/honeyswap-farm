@@ -33,6 +33,16 @@ module.exports = (web3) => {
     return pair
   }
 
+  const gql = (queryParts, ...args) => {
+    let resStr = queryParts[0]
+
+    args.forEach((arg, index) => {
+      resStr += `${arg}${queryParts[index + 1]}`
+    })
+
+    return resStr
+  }
+
   async function getPastLogs(
     contract,
     event,
@@ -44,6 +54,7 @@ module.exports = (web3) => {
   ) {
     console.log('fromBlock: ', fromBlock)
     console.log('finalToBlock: ', finalToBlock)
+    console.log('')
     let toBlock
     eventProcessor = eventProcessor ?? ((event) => event)
     const eventChunks = []
@@ -103,6 +114,7 @@ module.exports = (web3) => {
   }
 
   return {
+    gql,
     loadJson,
     saveJson,
     getPastLogs,

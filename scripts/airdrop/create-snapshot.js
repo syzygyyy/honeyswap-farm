@@ -117,7 +117,7 @@ async function getPairRewards(pair, toBlock) {
 
     updateAccumulator(blockNumber)
 
-    if (from === uniPoolFarm || to === uniPoolFarm) {
+    if (uniPoolFarm !== ZERO_ADDRESS && (from === uniPoolFarm || to === uniPoolFarm)) {
       continue
     }
 
@@ -170,7 +170,10 @@ async function main() {
   const rewards = {}
 
   let totalPairWeight = ZERO
+  const totalPairs = Object.keys(pairInput).length
+  let currentPair = 0
   for (const [pair, weight] of Object.entries(pairs)) {
+    console.log(`${++currentPair}/${totalPairs} ${pair}`)
     totalPairWeight = totalPairWeight.add(weight)
     const newRewards = await getPairRewards(pair, toBlock)
     for (const [user, userPairRewardsShare] of Object.entries(newRewards)) {
@@ -182,8 +185,12 @@ async function main() {
   let totalGivenRewards = ZERO
   for (const [user, userRewards] of Object.entries(rewards)) {
     const actualRewards = userRewards.div(totalPairWeight).div(SCALE)
-    rewards[user] = actualRewards
-    totalGivenRewards = totalGivenRewards.add(actualRewards)
+    if (actualRewards.gt(ZERO)) {
+      rewards[user] = actualRewards
+      totalGivenRewards = totalGivenRewards.add(actualRewards)
+    } else {
+      delete rewards[user]
+    }
   }
 
   console.log('totalTokens: ', web3.utils.fromWei(totalTokens))

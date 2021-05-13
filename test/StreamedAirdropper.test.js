@@ -1,9 +1,15 @@
 const { contract, accounts, web3 } = require('@openzeppelin/test-environment')
 const { time, constants, expectEvent, expectRevert } = require('@openzeppelin/test-helpers')
 const { MAX_UINT256 } = constants
-const { ZERO, trackBalance, ether, bnSum, expectEqualWithinFraction, bnE } = require('./utils')(
-  web3
-)
+const {
+  ZERO,
+  trackBalance,
+  ether,
+  bnSum,
+  expectEqualWithinFraction,
+  bnE,
+  safeBN
+} = require('./utils')(web3)
 const { expect } = require('chai')
 const BN = require('bn.js')
 
@@ -172,5 +178,28 @@ describe('StreamedAirdropper', () => {
   })
   it('prevents withdrawals after end has been withdrawn', async () => {
     await expectRevert(this.airdropper.withdraw({ from: user1 }), 'SA: No pending tokens')
+  })
+  it('gas usage', async () => {
+    const totalDist = ether('1000000') // 1 million
+
+    const addVestingTo = async (addresses) => {
+      const randomAddresses = []
+      const airdropAmount = totalDist.div(safeBN(addresses))
+      for (let i = 0; i < addresses; i++) randomAddresses.push(web3.utils.randomHex(20))
+      await this.token.mint(admin1, totalDist)
+      const { receipt } = await this.airdropper.addVesting(
+        randomAddresses,
+        new Array(addresses).fill(airdropAmount),
+        {
+          from: admin1
+        }
+      )
+      console.log(`gas used: ${receipt.gasUsed} (${receipt.cumulativeGasUsed})`)
+    }
+
+    await addVestingTo(5)
+    await addVestingTo(20)
+    await addVestingTo(100)
+    await addVestingTo(500)
   })
 })

@@ -26,6 +26,8 @@ async function main() {
 
   const account = web3.eth.accounts.wallet.add(privKey)
   const mainAddr = account.address
+  console.log('mainAddr: ', mainAddr)
+  process.exit(0)
 
   // deploy xComb token
   const EmptyHSFToken = new web3.eth.Contract(HSFTokenData.abi)
@@ -54,6 +56,9 @@ async function main() {
   const airdropPerc = ether('0.05')
   const referrerRewardPerc = ether('0.01')
   const endDistFrac = ether('0.25')
+  const downgradeFee = ether('0.0001')
+  const minimumTimelock = safeBN(24 * 60 * 60) // 1 day
+  const maximumTimelock = safeBN(Math.floor(1.5 * 365 * 24 * 60 * 60)) // 1.5 years
 
   const airdrop = totalSupply.mul(airdropPerc).div(SCALE)
   const leftOver = totalSupply.sub(airdrop)
@@ -68,11 +73,11 @@ async function main() {
       safeBN(currentTime + 2 * 365 * 24 * 60 * 60),
       distRewards,
       endDistFrac,
-      safeBN(24 * 60 * 60),
-      safeBN(Math.floor(1.5 * 365 * 24 * 60 * 60)),
+      minimumTimelock,
+      maximumTimelock,
       SCALE.div(safeBN(10 * 30 * 24 * 60 * 60)),
       SCALE,
-      ether('0.0001')
+      downgradeFee
     ]
   ]
   console.log('args: ', args)
