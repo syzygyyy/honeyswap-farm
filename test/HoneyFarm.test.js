@@ -24,11 +24,8 @@ const TestERC20 = contract.fromArtifact('TestERC20')
 
 describe('HoneyFarm', () => {
   const fundReferralRewarder = async () => {
-    await this.farmToken.transfer(
-      this.referralRewarder.address,
-      bnPerc(await this.farmToken.totalSupply(), '50'),
-      { from: admin1 }
-    )
+    const fundAmount = this.totalDist.mul(this.refRewardRate).div(this.SCALE)
+    await this.farmToken.transfer(this.referralRewarder.address, fundAmount, { from: admin1 })
   }
 
   beforeEach(async () => {
@@ -72,7 +69,7 @@ describe('HoneyFarm', () => {
     this.getDistError = (edgeTime) => this.getFarmDist(edgeTime, edgeTime.add(this.errorTime))
     this.maxError = await this.getDistError(this.startTime)
     expect(await this.farmToken.balanceOf(this.farm.address)).to.be.bignumber.equal(this.totalDist)
-    this.refRewardRate = ether('0.8')
+    this.refRewardRate = ether('0.2')
     this.referralRewarder = await ReferralRewarder.new(this.farmToken.address, this.refRewardRate, {
       from: admin1
     })
@@ -91,7 +88,7 @@ describe('HoneyFarm', () => {
         this.totalDist
       )
     })
-    it('can add pool', async () => {
+    it('can add and remove pool', async () => {
       expect(await this.farm.poolLength()).to.be.bignumber.equal(ZERO)
       const allocation = new BN('20')
       await this.farm.add(this.lpToken1.address, allocation, {
@@ -106,6 +103,12 @@ describe('HoneyFarm', () => {
       expect(pool.accHsfPerShare).to.be.bignumber.equal(ZERO)
       expect(pool.totalShares).to.be.bignumber.equal(ZERO)
       expect(pool.lastRewardTimestamp).to.be.bignumber.equal(await this.farm.startTime())
+
+      const receipt = await this.farm.set(this.lpToken1.address, ZERO, { from: admin1 })
+      expectEvent(receipt, 'PoolUpdated', { poolToken: this.lpToken1.address, allocation: ZERO })
+      expectEvent(receipt, 'PoolRemoved', { poolToken: this.lpToken1.address })
+      expect(await this.farm.totalAllocationPoints()).to.be.bignumber.equal(ZERO)
+      expect(await this.farm.poolLength()).to.be.bignumber.equal(ZERO)
     })
     it('updates pool correctly when entering and exiting', async () => {
       await expectRevert(
@@ -893,6 +896,89 @@ describe('HoneyFarm', () => {
         referrer,
         owedReward: expectedTotalReward.sub(refReward)
       })
+    })
+  })
+  describe('adding additional rewards', () => {
+    it('accounts additional rewards', async () => {
+      const addedRewards = ether('400')
+      await this.farmToken.approve(this.farm.address, addedRewards, { from: admin1 })
+
+      const token1 = await TestERC20.new()
+      await token1.mint(user1, ether('200'))
+      await token1.approve(this.farm.address, MAX_UINT256, { from: user1 })
+      await this.farm.add(token1.address, new BN('20'), { from: admin1 })
+
+      const token2 = await TestERC20.new()
+      await token2.mint(user1, ether('100'))
+      await token2.approve(this.farm.address, MAX_UINT256, { from: user1 })
+      await this.farm.add(token2.address, new BN('20'), { from: admin1 })
+
+      await this.farm.createDeposit(token1.address, ether('100'), ZERO, ZERO_ADDRESS, {
+        from: user1
+      })
+      await this.farm.createDeposit(token2.address, ether('100'), ZERO, ZERO_ADDRESS, {
+        from: user1
+      })
+      await this.farm.createDeposit(token1.address, ether('100'), ZERO, ZERO_ADDRESS, {
+        from: user1
+      })
+
+      const receipt = await this.farm.depositAdditionalRewards(addedRewards, { from: admin1 })
+      expectEvent(receipt, 'RewardsAdded', { additionalRewardAmount: addedRewards })
+
+      expect(await this.farm.pendingHsf(new BN('0'))).to.be.bignumber.equal(
+        ether('100'),
+        'incorrect deposit 0 rewards'
+      )
+      expect(await this.farm.pendingHsf(new BN('1'))).to.be.bignumber.equal(
+        ether('200'),
+        'incorrect deposit 1 rewards'
+      )
+      expect(await this.farm.pendingHsf(new BN('2'))).to.be.bignumber.equal(
+        ether('100'),
+        'incorrect deposit 2 rewards'
+      )
+    })
+  })
+  describe('gas usage', () => {
+    it('adding pools and adding rewards', async () => {
+      await this.farmToken.approve(this.farm.address, MAX_UINT256, { from: admin1 })
+      const testTokens = []
+      const addPools = async (newPools) => {
+        for (let i = 0; i < newPools; i++) {
+          const newTestToken = await TestERC20.new()
+          testTokens.push(newTestToken)
+          const poolToken = newTestToken.address
+          const { receipt } = await this.farm.add(poolToken, new BN('10'), {
+            from: admin1
+          })
+          const depositAmount = ether('100')
+          await newTestToken.mint(user1, depositAmount)
+          await newTestToken.approve(this.farm.address, MAX_UINT256, { from: user1 })
+          await this.farm.createDeposit(poolToken, depositAmount, ZERO, ZERO_ADDRESS, {
+            from: user1
+          })
+          console.log(`gas used to add pool ${testTokens.length}. : ${receipt.gasUsed}`)
+        }
+      }
+      await addPools(20)
+      const { receipt: receipt1 } = await this.farm.depositAdditionalRewards(ether('1200'), {
+        from: admin1
+      })
+      console.log(`\ndepositing rewards gas cost with 20 pools: ${receipt1.gasUsed}\n`)
+      const { receipt: receipt2 } = await this.farm.depositAdditionalRewards(ether('1200'), {
+        from: admin1
+      })
+      console.log(`\ndepositing rewards gas cost with 20 pools (2nd time): ${receipt2.gasUsed}\n`)
+      await addPools(20)
+      const { receipt: receipt3 } = await this.farm.depositAdditionalRewards(ether('1200'), {
+        from: admin1
+      })
+      console.log(`\ndepositing rewards gas cost with 40 pools: ${receipt3.gasUsed}`)
+      const { receipt: receipt4 } = await this.farm.depositAdditionalRewards(ether('1200'), {
+        from: admin1
+      })
+      console.log(`\ndepositing rewards gas cost with 40 pools (2nd time): ${receipt4.gasUsed}`)
     })
   })
 })

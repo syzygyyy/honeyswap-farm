@@ -7,8 +7,8 @@
     "test": "test"
   },
   "scripts": {
-    "direct-test": "mocha --exit --recursive --timeout 20000",
-    "test": "npm run compile && mocha --exit --recursive --timeout 20000",
+    "direct-test": "mocha --exit --recursive --timeout 200000",
+    "test": "npm run compile && mocha --exit --recursive --timeout 200000",
     "compile": "truffle compile"
   },
   "repository": {

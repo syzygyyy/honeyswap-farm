@@ -80,6 +80,7 @@ contract HoneyFarm is Ownable, ERC721 {
     /* fired when pool parameters are updated not when the updatePool() method
        is called */
     event PoolUpdated(IERC20 indexed poolToken, uint256 allocation);
+    event PoolRemoved(IERC20 indexed poolToken);
     event Disabled();
     event DepositDowngraded(
         address indexed downgrader,
@@ -210,6 +211,7 @@ contract HoneyFarm is Ownable, ERC721 {
             address(referralRewarder) != address(0),
             "HF: Referral not setup yet"
         );
+        require(_allocation > 0, "HF: Too low allocation");
         massUpdatePools();
         require(pools.add(address(_lpToken)), "HF: LP pool already exists");
         uint256 lastRewardTimestamp = Math.max(block.timestamp, startTime);
@@ -235,6 +237,10 @@ contract HoneyFarm is Ownable, ERC721 {
             .add(_allocation);
         poolInfo[_poolToken].allocation = _allocation;
         emit PoolUpdated(_poolToken, _allocation);
+        if (_allocation == 0) {
+            pools.remove(address(_poolToken));
+            emit PoolRemoved(_poolToken);
+        }
     }
 
     // get tokens to be distributed between two timestamps scaled by SCALE
