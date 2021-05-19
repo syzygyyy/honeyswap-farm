@@ -18,7 +18,7 @@ const BN = require('bn.js')
 const [admin1, admin2, user1, user2, attacker1, attacker2] = accounts
 
 const HoneyFarm = contract.fromArtifact('HoneyFarm')
-const HSFToken = contract.fromArtifact('HSFToken')
+const HSFToken = contract.fromArtifact('XDaiCombToken')
 const ReferralRewarder = contract.fromArtifact('ReferralRewarder')
 const TestERC20 = contract.fromArtifact('TestERC20')
 

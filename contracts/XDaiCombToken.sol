@@ -3,9 +3,9 @@ pragma solidity ^0.7.6;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract HSFToken is ERC20 {
+contract XDaiCombToken is ERC20 {
     constructor() ERC20("HoneySwap Farm token", "xCOMB") {
-        // 10 million initial supply
+        // 1 million initial supply
         _mint(msg.sender, 10**6 * 1e18);
     }
 }
