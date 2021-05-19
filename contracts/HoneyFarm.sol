@@ -187,17 +187,22 @@ contract HoneyFarm is Ownable, ERC721 {
     }
 
     function depositAdditionalRewards(uint256 _depositAmount) external {
+        uint256 totalAllocationPoints_ = totalAllocationPoints;
+        require(totalAllocationPoints_ > 0, "HF: no pools created");
         hsf.safeTransferFrom(msg.sender, address(this), _depositAmount);
         uint256 poolLen = pools.length();
         for (uint256 i; i < poolLen; i++) {
             IERC20 poolToken = IERC20(pools.at(i));
             PoolInfo storage pool = poolInfo[poolToken];
-            uint256 poolScaledRewards = _depositAmount
-                .mul(SCALE)
-                .mul(pool.allocation)
-                .div(totalAllocationPoints)
-                .div(pool.totalShares);
-            pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
+            uint256 poolTotalShares = pool.totalShares;
+            if (poolTotalShares > 0) {
+                uint256 poolScaledRewards = _depositAmount
+                    .mul(SCALE)
+                    .mul(pool.allocation)
+                    / totalAllocationPoints_
+                    / poolTotalShares;
+                pool.accHsfPerShare = pool.accHsfPerShare.add(poolScaledRewards);
+            }
         }
         emit RewardsAdded(_depositAmount);
     }
