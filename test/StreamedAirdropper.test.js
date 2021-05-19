@@ -194,12 +194,17 @@ describe('StreamedAirdropper', () => {
           from: admin1
         }
       )
-      console.log(`gas used: ${receipt.gasUsed} (${receipt.cumulativeGasUsed})`)
+      console.log(
+        `gas used: ${receipt.gasUsed} (${receipt.gasUsed / addresses} / user @${addresses} users)`
+      )
     }
 
     await addVestingTo(5)
     await addVestingTo(20)
+    await addVestingTo(30)
+    await addVestingTo(40)
     await addVestingTo(100)
+    await addVestingTo(300)
     await addVestingTo(500)
   })
 })

@@ -1,4 +1,4 @@
-const { getDetAddr } = require('../test/utils')
+const { getDetAddr } = require('../test/utils')(null)
 
 function main() {
   const [, , addr, nonceRaw] = process.argv

@@ -16,7 +16,7 @@ module.exports = (web3) => {
     const resHash = keccak('keccak256').update(rlpEncoded).digest('hex')
 
     const contractAddr = `0x${resHash.substring(24)}`
-    return web3.utils.toChecksumAddress(contractAddr)
+    return contractAddr
   }
 
   const getTxNonce = async (txId) => {
