@@ -21,10 +21,11 @@ module.exports = (web3) => {
     '0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7'
   )
 
-  const uniFarmFactory = new web3.eth.Contract(
-    loadJson('./abis/unipool-factory.json'),
-    '0xE29DCD715D11455194D7d74c622F3c42C8a37040'
-  )
+  const unipoolFactoryAbi = loadJson('./abis/unipool-factory.json')
+  const uniFarmFactories = [
+    '0xE29DCD715D11455194D7d74c622F3c42C8a37040',
+    '0x78727c026957cB7fe67D0Fd404E55976Db9F0586'
+  ].map((address) => new web3.eth.Contract(unipoolFactoryAbi, address))
 
   const loadPair = async (pairAddress) => {
     const pair = new web3.eth.Contract(loadJson('./abis/pair-abi.json'), pairAddress)
@@ -119,7 +120,7 @@ module.exports = (web3) => {
     saveJson,
     getPastLogs,
     pairFactory,
-    uniFarmFactory,
+    uniFarmFactories,
     loadPair,
     ether,
     removeDuplicateTransfers,

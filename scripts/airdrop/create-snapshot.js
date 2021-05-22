@@ -1,8 +1,9 @@
 const BN = require('bn.js')
 const web3 = require('./web3')()
 const { connectDB, Transfer, ASCENDING } = require('./mongoose')(web3)
-const { constants, saveJson, loadJson, uniFarmFactory, ether } = require('./utils')(web3)
+const { constants, saveJson, loadJson, uniFarmFactories, ether } = require('./utils')(web3)
 const { ZERO_ADDRESS, SCALE } = constants
+const otherFarms = require('./other-farms.json')
 
 const ZERO = new BN('0')
 const emtpyBnObj = () => {
@@ -31,7 +32,16 @@ async function getLogIndexParams(pair, toBlock) {
 }
 
 async function getPairRewards(pair, toBlock) {
-  const { pool: uniPoolFarm } = await uniFarmFactory.methods.pools(pair).call()
+  const uniPoolsRes = await Promise.all(
+    uniFarmFactories.map(async (farmFactory) => {
+      const { pool } = await farmFactory.methods.pools(pair).call()
+      return pool
+    })
+  )
+  const blacklistedAddresses = new Set(
+    [...uniPoolsRes, ...otherFarms].filter((address) => address !== ZERO_ADDRESS)
+  )
+  console.log('blacklistedAddresses: ', blacklistedAddresses)
 
   const { logIndexDelta, blockNumShift } = await getLogIndexParams(pair, toBlock)
   const transfers = await Transfer.aggregate([
@@ -117,7 +127,7 @@ async function getPairRewards(pair, toBlock) {
 
     updateAccumulator(blockNumber)
 
-    if (uniPoolFarm !== ZERO_ADDRESS && (from === uniPoolFarm || to === uniPoolFarm)) {
+    if (blacklistedAddresses.has(from) || blacklistedAddresses.has(to)) {
       continue
     }
 
@@ -148,11 +158,12 @@ async function getPairRewards(pair, toBlock) {
     totalRewards = totalRewards.add(newRewards[user])
   }
 
+  const finalNewRewards = []
   for (const [user, userRewards] of Object.entries(newRewards)) {
-    newRewards[user] = userRewards.mul(SCALE).div(totalRewards)
+    finalNewRewards[user] = userRewards.mul(SCALE).div(totalRewards)
   }
 
-  return newRewards
+  return finalNewRewards
 }
 
 async function main() {
@@ -169,27 +180,26 @@ async function main() {
   }
   const rewards = {}
 
-  let totalPairWeight = ZERO
   const totalPairs = Object.keys(pairInput).length
   let currentPair = 0
+  let totalRewards = ZERO
   for (const [pair, weight] of Object.entries(pairs)) {
     console.log(`${++currentPair}/${totalPairs} ${pair}`)
-    totalPairWeight = totalPairWeight.add(weight)
     const newRewards = await getPairRewards(pair, toBlock)
     for (const [user, userPairRewardsShare] of Object.entries(newRewards)) {
-      const additionalRewards = userPairRewardsShare.mul(totalTokens).mul(weight)
+      const additionalRewards = userPairRewardsShare.mul(weight)
       rewards[user] = (rewards[user] ?? ZERO).add(additionalRewards)
+      totalRewards = totalRewards.add(additionalRewards)
     }
   }
 
+  const finalRewards = {}
   let totalGivenRewards = ZERO
   for (const [user, userRewards] of Object.entries(rewards)) {
-    const actualRewards = userRewards.div(totalPairWeight).div(SCALE)
+    const actualRewards = userRewards.mul(totalTokens).div(totalRewards)
     if (actualRewards.gt(ZERO)) {
-      rewards[user] = actualRewards
+      finalRewards[user] = actualRewards
       totalGivenRewards = totalGivenRewards.add(actualRewards)
-    } else {
-      delete rewards[user]
     }
   }
 
@@ -200,10 +210,10 @@ async function main() {
     throw new Error('Snapshot distributing too many tokens')
   }
 
-  console.log('individual addresses:', Object.keys(rewards).length)
+  console.log('individual addresses:', Object.keys(finalRewards).length)
 
   const outputFile = process.argv[2]
-  saveJson(outputFile, rewards, [null, 2])
+  saveJson(outputFile, finalRewards, [null, 2])
 }
 
 main().then(() => process.exit(0))

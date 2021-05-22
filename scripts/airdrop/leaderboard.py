@@ -9,11 +9,14 @@ def main():
     listed_recipients = []
     total = 0
     for addr, airdrop in data.items():
-        airdrop = int(airdrop, 16) / 10**18
-        total += airdrop
+        raw_airdrop_amount = int(airdrop, 16)
+        airdrop = raw_airdrop_amount / 10**18
+        total += raw_airdrop_amount
         listed_recipients.append((addr, airdrop))
     listed_recipients.sort(key=lambda d: d[1], reverse=True)
-    print('total:', total)
+    print(f'total: {total / 10**18} ({total})')
+
+    total /= 10**18
 
     with open('airdrop-ranking.txt', 'w') as f:
         with redirect_stdout(f):
