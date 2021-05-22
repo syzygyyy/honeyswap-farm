@@ -1,7 +1,7 @@
 {
   "xdai": {
-    "hsfToken": "0x637DfD5b39E0C292c14f805b15083Ff44ad30C38",
-    "airdropper": "0x1132eaE3F515E0d70001ebD5BEF7dA047967aAaC"
+    "hsfToken": "0xAFCC7E4F53316d4Fe462a7892445298543B2A378",
+    "airdropper": "0x79150a3B85c2F4ff3015FA3a0eA89A75413Eaba1"
   },
   "rinkeby": {
     "hsfToken": "0xe26EF0e1890d83e196191822752749a37d7A199f",
