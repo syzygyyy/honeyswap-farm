@@ -357,6 +357,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
             Ownable(_referralRewarder).owner() == address(this),
             "HF: Not yet owner of HRP"
         );
+        IRewardManager(_referralRewarder).grantFundsAccess();
         referralRewarder = IRewardManager(_referralRewarder);
     }
 

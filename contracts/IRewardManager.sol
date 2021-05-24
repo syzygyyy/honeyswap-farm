@@ -3,5 +3,6 @@ pragma solidity ^0.7.6;
 
 interface IRewardManager {
     function distributeReward(address _referrer, uint256 _amount) external;
+    function grantFundsAccess() external;
     function rebalance() external;
 }

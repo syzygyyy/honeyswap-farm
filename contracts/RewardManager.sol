@@ -11,6 +11,7 @@ import "./IHoneyFarm.sol";
 
 contract RewardManager is IRewardManager, Ownable {
     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
 
     uint256 public constant SCALE = 1e18;
     IERC20 public immutable rewardToken;
@@ -30,13 +31,17 @@ contract RewardManager is IRewardManager, Ownable {
         uint256 currentReserves = rewardToken.balanceOf(address(this));
         uint256 reward = _amount.mul(exchangeRate).div(SCALE);
         if (reward <= currentReserves) {
-            SafeERC20.safeTransfer(rewardToken, _referrer, reward);
+            rewardToken.safeTransfer(_referrer, reward);
         } else if (currentReserves > 0) {
-            SafeERC20.safeTransfer(rewardToken, _referrer, currentReserves);
+            rewardToken.safeTransfer(_referrer, currentReserves);
             emit MissingReward(_referrer,  reward - currentReserves);
         } else {
             emit MissingReward(_referrer, reward);
         }
+    }
+
+    function grantFundsAccess() external override onlyOwner {
+        rewardToken.safeApprove(owner(), type(uint256).max);
     }
 
     function rebalance() external override {
