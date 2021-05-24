@@ -8,10 +8,11 @@ import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./ReferralRewarder.sol";
+import "./IHoneyFarm.sol";
+import "./IRewardManager.sol";
 
 // Forked from sushiswap's MasterChef contract
-contract HoneyFarm is Ownable, ERC721 {
+contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -42,7 +43,7 @@ contract HoneyFarm is Ownable, ERC721 {
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
     // referral points token to keep track of referrals
-    ReferralRewarder public referralRewarder;
+    IRewardManager public referralRewarder;
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
@@ -186,7 +187,8 @@ contract HoneyFarm is Ownable, ERC721 {
         emit Disabled();
     }
 
-    function depositAdditionalRewards(uint256 _depositAmount) external {
+    function depositAdditionalRewards(uint256 _depositAmount) external override {
+        require(msg.sender == address(referralRewarder), "HF: Only RR may add rewards");
         uint256 totalAllocationPoints_ = totalAllocationPoints;
         require(totalAllocationPoints_ > 0, "HF: no pools created");
         hsf.safeTransferFrom(msg.sender, address(this), _depositAmount);
@@ -297,7 +299,6 @@ contract HoneyFarm is Ownable, ERC721 {
         external notDisabled
     {
         require(_amount > 0, "HF: Must deposit something");
-        require(_unlockTime <= endTime, "HF: Unlock time after reward end");
         require(
             _unlockTime == 0 || _unlockTime > block.timestamp,
             "HF: Invalid unlock time"
@@ -356,7 +357,7 @@ contract HoneyFarm is Ownable, ERC721 {
             Ownable(_referralRewarder).owner() == address(this),
             "HF: Not yet owner of HRP"
         );
-        referralRewarder = ReferralRewarder(_referralRewarder);
+        referralRewarder = IRewardManager(_referralRewarder);
     }
 
     function withdrawRewards(uint256 _depositId) external {
