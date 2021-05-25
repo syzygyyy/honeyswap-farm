@@ -45,16 +45,16 @@ contract RewardManager is IRewardManager, Ownable {
     }
 
     function rebalance() external override {
-        uint256 rrBalance = rewardToken.balanceOf(address(this));
+        uint256 rmBalance = rewardToken.balanceOf(address(this));
         address farm = owner();
         uint256 farmBalance = rewardToken.balanceOf(farm);
 
-        uint256 scaledRRBalance = SCALE.mul(rrBalance);
+        uint256 scaledRMBalance = SCALE.mul(rmBalance);
         uint256 ratioFarmBalance = exchangeRate.mul(farmBalance);
-        if (scaledRRBalance > ratioFarmBalance) {
+        if (scaledRMBalance > ratioFarmBalance) {
             uint256 targetRebalanceAmount =
-                (scaledRRBalance - ratioFarmBalance) / (SCALE + exchangeRate);
-            uint256 rebalanceAmount = Math.min(rrBalance, targetRebalanceAmount);
+                (scaledRMBalance - ratioFarmBalance) / (SCALE + exchangeRate);
+            uint256 rebalanceAmount = Math.min(rmBalance, targetRebalanceAmount);
             IHoneyFarm(farm).depositAdditionalRewards(rebalanceAmount);
         }
     }
