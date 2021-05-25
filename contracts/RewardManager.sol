@@ -20,7 +20,7 @@ contract RewardManager is IRewardManager, Ownable {
     event MissingReward(address indexed referrer, uint256 owedReward);
 
     constructor(IERC20 _rewardToken, uint256 _exchangeRate) Ownable() {
-        require(_exchangeRate < SCALE, "RR: Invalid reward ratio");
+        require(_exchangeRate < SCALE, "RM: Invalid reward ratio");
         rewardToken = _rewardToken;
         exchangeRate = _exchangeRate;
     }
@@ -48,11 +48,14 @@ contract RewardManager is IRewardManager, Ownable {
         uint256 rrBalance = rewardToken.balanceOf(address(this));
         address farm = owner();
         uint256 farmBalance = rewardToken.balanceOf(farm);
-        uint256 targetRebalanceAmount =
-            SCALE.mul(rrBalance).sub(exchangeRate.mul(farmBalance)).div(
-                SCALE.add(exchangeRate)
-            );
-        uint256 rebalanceAmount = Math.min(rrBalance, targetRebalanceAmount);
-        IHoneyFarm(farm).depositAdditionalRewards(rebalanceAmount);
+
+        uint256 scaledRRBalance = SCALE.mul(rrBalance);
+        uint256 ratioFarmBalance = exchangeRate.mul(farmBalance);
+        if (scaledRRBalance > ratioFarmBalance) {
+            uint256 targetRebalanceAmount =
+                (scaledRRBalance - ratioFarmBalance) / (SCALE + exchangeRate);
+            uint256 rebalanceAmount = Math.min(rrBalance, targetRebalanceAmount);
+            IHoneyFarm(farm).depositAdditionalRewards(rebalanceAmount);
+        }
     }
 }
