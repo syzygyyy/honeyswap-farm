@@ -42,8 +42,8 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     uint256 public constant SCALE = 1e18;
     // The HoneySwap Farm token
     IERC20 public immutable hsf;
-    // referral points token to keep track of referrals
-    IRewardManager public referralRewarder;
+    // Manages referrals and additional rewards
+    IRewardManager public rewardManager;
     // Info of each pool.
     mapping(IERC20 => PoolInfo) public poolInfo;
     // set of running pools
@@ -188,7 +188,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     }
 
     function depositAdditionalRewards(uint256 _depositAmount) external override {
-        require(msg.sender == address(referralRewarder), "HF: Only RR may add rewards");
+        require(msg.sender == address(rewardManager), "HF: Only RM may add rewards");
         uint256 totalAllocationPoints_ = totalAllocationPoints;
         require(totalAllocationPoints_ > 0, "HF: no pools created");
         hsf.safeTransferFrom(msg.sender, address(this), _depositAmount);
@@ -215,8 +215,8 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         uint256 _allocation
     ) public onlyOwner notDisabled {
         require(
-            address(referralRewarder) != address(0),
-            "HF: Referral not setup yet"
+            address(rewardManager) != address(0),
+            "HF: RewardManager not setup yet"
         );
         require(_allocation > 0, "HF: Too low allocation");
         massUpdatePools();
@@ -351,14 +351,14 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         delete depositInfo[_depositId];
     }
 
-    function setReferralRewarder(address _referralRewarder) external onlyOwner {
-        require(address(referralRewarder) == address(0), "HF: HRP already set");
+    function setRewardManager(address _rewardManager) external onlyOwner {
+        require(address(rewardManager) == address(0), "HF: R already set");
         require(
-            Ownable(_referralRewarder).owner() == address(this),
+            Ownable(_rewardManager).owner() == address(this),
             "HF: Not yet owner of HRP"
         );
-        IRewardManager(_referralRewarder).grantFundsAccess();
-        referralRewarder = IRewardManager(_referralRewarder);
+        IRewardManager(_rewardManager).grantFundsAccess();
+        rewardManager = IRewardManager(_rewardManager);
     }
 
     function withdrawRewards(uint256 _depositId) external {
@@ -417,7 +417,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
 
     function _rewardReferrer(address _referrer, uint256 _reward) internal {
         if (_referrer != address(0)) {
-            referralRewarder.distributeReward(_referrer, _reward);
+            rewardManager.distributeReward(_referrer, _reward);
         }
     }
 

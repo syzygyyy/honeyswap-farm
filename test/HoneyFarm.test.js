@@ -18,18 +18,23 @@ const BN = require('bn.js')
 const [admin1, admin2, user1, user2, attacker1, attacker2] = accounts
 
 const HoneyFarm = contract.fromArtifact('HoneyFarm')
-const HSFToken = contract.fromArtifact('XDaiCombToken')
-const ReferralRewarder = contract.fromArtifact('ReferralRewarder')
+const CombToken = contract.fromArtifact('CombToken')
+const RewardManager = contract.fromArtifact('RewardManager')
 const TestERC20 = contract.fromArtifact('TestERC20')
 
 describe('HoneyFarm', () => {
-  const fundReferralRewarder = async () => {
+  const fundRewardManager = async () => {
     const fundAmount = this.totalDist.mul(this.refRewardRate).div(this.SCALE)
-    await this.farmToken.transfer(this.referralRewarder.address, fundAmount, { from: admin1 })
+    await this.farmToken.transfer(this.rewardManager.address, fundAmount, { from: admin1 })
+  }
+
+  const depositRewards = async (rewards, from) => {
+    await this.farmToken.transfer(this.rewardManager.address, rewards, { from })
+    return await this.rewardManager.rebalance()
   }
 
   beforeEach(async () => {
-    this.farmToken = await HSFToken.new({ from: admin1 })
+    this.farmToken = await CombToken.new('xDai Native Comb', 'xComb', { from: admin1 })
 
     this.SCALE = ether('1')
     this.minTime = time.duration.days(1)
@@ -70,18 +75,18 @@ describe('HoneyFarm', () => {
     this.maxError = await this.getDistError(this.startTime)
     expect(await this.farmToken.balanceOf(this.farm.address)).to.be.bignumber.equal(this.totalDist)
     this.refRewardRate = ether('0.2')
-    this.referralRewarder = await ReferralRewarder.new(this.farmToken.address, this.refRewardRate, {
+    this.rewardManager = await RewardManager.new(this.farmToken.address, this.refRewardRate, {
       from: admin1
     })
-    await this.referralRewarder.transferOwnership(this.farm.address, { from: admin1 })
-    await this.farm.setReferralRewarder(this.referralRewarder.address, { from: admin1 })
+    await this.rewardManager.transferOwnership(this.farm.address, { from: admin1 })
+    await this.farm.setRewardManager(this.rewardManager.address, { from: admin1 })
 
     this.lpToken1 = await TestERC20.new()
     this.lpToken2 = await TestERC20.new()
   })
   describe('general', () => {
     beforeEach(async () => {
-      await fundReferralRewarder()
+      await fundRewardManager()
     })
     it('calculates total distribution accurately', async () => {
       expect(await this.getFarmDist(this.startTime, this.endTime)).to.be.bignumber.equal(
@@ -572,13 +577,6 @@ describe('HoneyFarm', () => {
         'HF: Lock time too short'
       )
     })
-    it('prevents deposits that end after distribution end from being created', async () => {
-      const depositEnd = this.endTime.add(time.duration.seconds(1))
-      await expectRevert(
-        this.farm.createDeposit(this.poolToken, this.mintAmount, depositEnd, ZERO_ADDRESS),
-        'HF: Unlock time after reward end'
-      )
-    })
     it('prevents deposits with 0 amount from being created', async () => {
       const depositDuration = time.duration.days(60)
       const depositEnd = (await time.latest()).add(depositDuration)
@@ -841,7 +839,7 @@ describe('HoneyFarm', () => {
       expectEvent.notEmitted(receipt, 'Referred')
     })
     it('credits referrer with reward upon closing deposit', async () => {
-      await fundReferralRewarder()
+      await fundRewardManager()
 
       const referrer = user2
       const user1Tracker = await trackBalance(this.farmToken, user1)
@@ -872,7 +870,7 @@ describe('HoneyFarm', () => {
         .div(this.SCALE)
         .div(this.SCALE)
       const refReserves = bnPerc(estRewards, '50')
-      await this.farmToken.transfer(this.referralRewarder.address, refReserves, {
+      await this.farmToken.transfer(this.rewardManager.address, refReserves, {
         from: admin1
       })
 
@@ -892,7 +890,7 @@ describe('HoneyFarm', () => {
       const expectedTotalReward = userReward.mul(this.refRewardRate).div(this.SCALE)
       const refReward = await referrerTracker.delta()
       expect(refReward).to.be.bignumber.equal(refReserves)
-      await expectEvent.inTransaction(receipt.tx, this.referralRewarder, 'MissingReward', {
+      await expectEvent.inTransaction(receipt.tx, this.rewardManager, 'MissingReward', {
         referrer,
         owedReward: expectedTotalReward.sub(refReward)
       })
@@ -900,8 +898,8 @@ describe('HoneyFarm', () => {
   })
   describe('adding additional rewards', () => {
     it('accounts additional rewards', async () => {
+      await fundRewardManager()
       const addedRewards = ether('400')
-      await this.farmToken.approve(this.farm.address, addedRewards, { from: admin1 })
 
       const token1 = await TestERC20.new()
       await token1.mint(user1, ether('200'))
@@ -923,26 +921,36 @@ describe('HoneyFarm', () => {
         from: user1
       })
 
-      const receipt = await this.farm.depositAdditionalRewards(addedRewards, { from: admin1 })
-      expectEvent(receipt, 'RewardsAdded', { additionalRewardAmount: addedRewards })
+      const receipt = await depositRewards(addedRewards, admin1)
+      const expectedReward = addedRewards.mul(this.SCALE).div(this.SCALE.add(this.refRewardRate))
+      await expectEvent.inTransaction(receipt.tx, this.farm, 'RewardsAdded', {
+        additionalRewardAmount: expectedReward
+      })
 
-      expect(await this.farm.pendingHsf(new BN('0'))).to.be.bignumber.equal(
-        ether('100'),
+      expectEqualWithinError(
+        await this.farm.pendingHsf(new BN('0')),
+        expectedReward.div(new BN('4')),
+        bnE('1', '4'),
         'incorrect deposit 0 rewards'
       )
-      expect(await this.farm.pendingHsf(new BN('1'))).to.be.bignumber.equal(
-        ether('200'),
+      expectEqualWithinError(
+        await this.farm.pendingHsf(new BN('1')),
+        expectedReward.div(new BN('2')),
+        bnE('1', '4'),
         'incorrect deposit 1 rewards'
       )
-      expect(await this.farm.pendingHsf(new BN('2'))).to.be.bignumber.equal(
-        ether('100'),
+      expectEqualWithinError(
+        await this.farm.pendingHsf(new BN('2')),
+        expectedReward.div(new BN('4')),
+        bnE('1', '4'),
         'incorrect deposit 2 rewards'
       )
     })
   })
   describe('gas usage', () => {
-    it('adding pools and adding rewards', async () => {
-      await this.farmToken.approve(this.farm.address, MAX_UINT256, { from: admin1 })
+    it('adding pools, adding rewards and rebalancing', async () => {
+      await fundRewardManager()
+
       const testTokens = []
       const addPools = async (newPools) => {
         for (let i = 0; i < newPools; i++) {
@@ -962,22 +970,14 @@ describe('HoneyFarm', () => {
         }
       }
       await addPools(20)
-      const { receipt: receipt1 } = await this.farm.depositAdditionalRewards(ether('1200'), {
-        from: admin1
-      })
+      const { receipt: receipt1 } = await depositRewards(ether('1200'), admin1)
       console.log(`\ndepositing rewards gas cost with 20 pools: ${receipt1.gasUsed}\n`)
-      const { receipt: receipt2 } = await this.farm.depositAdditionalRewards(ether('1200'), {
-        from: admin1
-      })
+      const { receipt: receipt2 } = await depositRewards(ether('1200'), admin1)
       console.log(`\ndepositing rewards gas cost with 20 pools (2nd time): ${receipt2.gasUsed}\n`)
       await addPools(20)
-      const { receipt: receipt3 } = await this.farm.depositAdditionalRewards(ether('1200'), {
-        from: admin1
-      })
+      const { receipt: receipt3 } = await depositRewards(ether('1200'), admin1)
       console.log(`\ndepositing rewards gas cost with 40 pools: ${receipt3.gasUsed}`)
-      const { receipt: receipt4 } = await this.farm.depositAdditionalRewards(ether('1200'), {
-        from: admin1
-      })
+      const { receipt: receipt4 } = await depositRewards(ether('1200'), admin1)
       console.log(`\ndepositing rewards gas cost with 40 pools (2nd time): ${receipt4.gasUsed}`)
     })
   })
