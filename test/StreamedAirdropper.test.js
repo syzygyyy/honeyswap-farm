@@ -205,6 +205,7 @@ describe('StreamedAirdropper', () => {
     await addVestingTo(40)
     await addVestingTo(100)
     await addVestingTo(300)
+    await addVestingTo(400)
     await addVestingTo(500)
   })
 })

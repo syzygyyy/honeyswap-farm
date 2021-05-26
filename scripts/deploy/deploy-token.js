@@ -1,21 +1,41 @@
 const { web3, mainAddr } = require('./web3')()
 const { deploy, loadJson } = require('./utils')
-const XDaiCombTokenData = require('../../build/contracts/XDaiCombToken.json')
+const CombTokenData = require('../../build/contracts/CombToken.json')
 const StreamedAirdropperData = require('../../build/contracts/StreamedAirdropper.json')
 const { safeBN, ether } = require('../../test/utils')(web3)
 const BN = require('bn.js')
 require('dotenv').config()
 
-const GAS_PRICE = '1000000000'
+const GAS_PRICE = '2000000001'
 
 async function main() {
   console.log('account executing: ', mainAddr)
   const addresses = loadJson('../../addresses.json')
-  const MainTokenData = XDaiCombTokenData
   let startingNonce = await web3.eth.getTransactionCount(mainAddr)
   console.log('startingNonce: ', startingNonce)
 
-  const [, , rawUpfrontDist, rawTotalVestingTime, airdropSnapshotSrc, rawBatchSize] = process.argv
+  const [
+    ,
+    ,
+    chain,
+    rawUpfrontDist,
+    rawTotalVestingTime,
+    airdropSnapshotSrc,
+    rawBatchSize
+  ] = process.argv
+  const chainParams = {
+    xdai: {
+      tokenName: 'xDai Native Comb',
+      tokenSymbol: 'xCOMB'
+    },
+    polygon: {
+      tokenName: 'Polygon Native Comb',
+      tokenSymbol: 'pCOMB'
+    }
+  }[chain]
+  if (!chainParams) {
+    throw new Error(`unsupported network '${chain}'`)
+  }
   const upfrontReward = parseFloat(rawUpfrontDist)
   const totalVestingTime = parseInt(rawTotalVestingTime)
   const batchSize = parseInt(rawBatchSize)
@@ -24,14 +44,18 @@ async function main() {
   const startTime = currentTime - (totalVestingTime * upfrontReward) / (1 - upfrontReward)
   const endTime = currentTime + totalVestingTime
 
-  const HSFToken = new web3.eth.Contract(MainTokenData.abi)
+  const HSFToken = new web3.eth.Contract(CombTokenData.abi)
   let hsfToken
-  if (addresses.xdai.hsfToken) {
-    hsfToken = new web3.eth.Contract(MainTokenData.abi, addresses.xdai.hsfToken)
+  if (addresses[chain].hsfToken) {
+    console.log(`already deployed token ${addresses[chain].hsfToken}`)
+    hsfToken = new web3.eth.Contract(CombTokenData.abi, addresses[chain].hsfToken)
   } else {
     console.log('deploying token')
     const { contract: contract1 } = await deploy(
-      HSFToken.deploy({ data: MainTokenData.bytecode })
+      HSFToken.deploy({
+        data: CombTokenData.bytecode,
+        arguments: [chainParams.tokenName, chainParams.tokenSymbol]
+      })
         .send({
           from: mainAddr,
           nonce: startingNonce++,
@@ -47,10 +71,12 @@ async function main() {
   }
 
   let airdropper
-  if (addresses.xdai.airdropper) {
-    airdropper = new web3.eth.Contract(StreamedAirdropperData.abi, addresses.xdai.airdropper)
+  if (addresses[chain].airdropper) {
+    console.log(`already deployed airdropper at ${addresses[chain].airdropper}`)
+    airdropper = new web3.eth.Contract(StreamedAirdropperData.abi, addresses[chain].airdropper)
   } else {
     const StreamedAirdropper = new web3.eth.Contract(StreamedAirdropperData.abi)
+    console.log('deploying airdropper')
     const { contract: contract2 } = await deploy(
       StreamedAirdropper.deploy({
         data: StreamedAirdropperData.bytecode,
@@ -76,14 +102,16 @@ async function main() {
   const ONE = new BN('1')
   const maxAllowance = ONE.shln(256).sub(ONE)
   const requiredAllowance = ether('50000')
+  console.log('checking allowance')
   if (
-    requiredAllowance.lt(
-      new BN(await hsfToken.methods.allowance(mainAddr, airdropper.options.address))
+    requiredAllowance.gt(
+      new BN(await hsfToken.methods.allowance(mainAddr, airdropper.options.address).call())
     )
-  )
+  ) {
     await hsfToken.methods
       .approve(airdropper.options.address, maxAllowance)
       .send({ from: mainAddr, nonce: startingNonce++, gasPrice: GAS_PRICE, gas: 200000 })
+  }
 
   const snapshot = loadJson(airdropSnapshotSrc)
   const allRecipients = Object.entries(snapshot)
@@ -99,7 +127,7 @@ async function main() {
         from: mainAddr,
         nonce: startingNonce++,
         gasPrice: GAS_PRICE,
-        gas: Math.max(batchSize * 30000, 4000000)
+        gas: Math.max(batchSize * 30000 + 50000, 4000000)
       })
       .on('sending', () => console.log('sending'))
       .on('sent', () => console.log('tx was sent'))

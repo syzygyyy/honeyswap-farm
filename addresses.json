@@ -1,10 +1,13 @@
 {
   "xdai": {
+    "hsfToken": "0x1526CEA5FB6182B2609Ab157ff7d60c81a56975d",
+    "airdropper": "0x307ED236a5D6199141cd881dd32F8DcE44f96bBE",
+    "rewardManager": "0x2b0421Fc0690C0D4f0517a671a02709a2043937B"
   },
   "rinkeby": {
     "hsfToken": "0xe26EF0e1890d83e196191822752749a37d7A199f",
     "farm": "0x087B269605a4a9e4c2C9dFAEc424A9Ad46e4d986",
-    "referralRewarder": "0xB4252EE3503C39C08DC429B4081Cd0100187a721",
+    "rewardManager": "0xB4252EE3503C39C08DC429B4081Cd0100187a721",
     "airdropper": "0x4BeA4ba49063061123aC8A51796F277Cfe2457F4"
   }
 }
