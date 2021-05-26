@@ -50,6 +50,7 @@ async function getBlacklistedAddresses(pair) {
 
 async function getPairRewards(pair, toBlock) {
   const blacklistedAddresses = await getBlacklistedAddresses(pair)
+  const directBlacklist = new Set(blacklistInfo.directBlacklist)
 
   const { logIndexDelta, blockNumShift } = await getLogIndexParams(pair, toBlock)
   const transfers = await Transfer.aggregate([
@@ -162,12 +163,16 @@ async function getPairRewards(pair, toBlock) {
     if (userBalance.gt(ZERO)) {
       decreaseBalance(user, userBalance)
     }
-    totalRewards = totalRewards.add(newRewards[user] ?? ZERO)
+    if (!directBlacklist.has(user)) {
+      totalRewards = totalRewards.add(newRewards[user] ?? ZERO)
+    }
   }
 
-  const finalNewRewards = []
+  const finalNewRewards = {}
   for (const [user, userRewards] of Object.entries(newRewards)) {
-    finalNewRewards[user] = userRewards.mul(SCALE).div(totalRewards)
+    if (!directBlacklist.has(user)) {
+      finalNewRewards[user] = userRewards.mul(SCALE).div(totalRewards)
+    }
   }
 
   return finalNewRewards
