@@ -91,6 +91,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     event Referred(address indexed referrer, uint256 depositId);
     event RewardsWithdraw(uint256 indexed depositId, uint256 rewardAmount);
     event RewardsAdded(uint256 additionalRewardAmount);
+    event RewardManagerSet(address indexed rewardManager);
 
     // parameters passed as byte strings to mitigate stack too deep error
     constructor(
@@ -171,14 +172,12 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     }
 
     // underscore placed after to avoid collide with the ERC721._baseURI property
-    function setBaseURI(string memory baseURI_) external onlyOwner {
+    function setBaseURI(string memory baseURI_) external override onlyOwner {
         _setBaseURI(baseURI_);
     }
 
     function disableContract(address _tokenRecipient)
-        external
-        onlyOwner
-        notDisabled
+        external override onlyOwner notDisabled
     {
         massUpdatePools();
         uint256 remainingTokens = getDistribution(block.timestamp, endTime);
@@ -213,7 +212,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     function add(
         IERC20 _lpToken,
         uint256 _allocation
-    ) public onlyOwner notDisabled {
+    ) public override onlyOwner notDisabled {
         require(
             address(rewardManager) != address(0),
             "HF: RewardManager not setup yet"
@@ -236,7 +235,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     function set(
         IERC20 _poolToken,
         uint256 _allocation
-    ) public onlyOwner notDisabled {
+    ) public override onlyOwner notDisabled {
         require(pools.contains(address(_poolToken)), "HF: Non-existant pool");
         massUpdatePools();
         totalAllocationPoints = totalAllocationPoints
@@ -351,7 +350,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         delete depositInfo[_depositId];
     }
 
-    function setRewardManager(address _rewardManager) external onlyOwner {
+    function setRewardManager(address _rewardManager) external override onlyOwner {
         require(address(rewardManager) == address(0), "HF: R already set");
         require(
             Ownable(_rewardManager).owner() == address(this),
@@ -359,6 +358,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         );
         IRewardManager(_rewardManager).grantFundsAccess();
         rewardManager = IRewardManager(_rewardManager);
+        emit RewardManagerSet(_rewardManager);
     }
 
     function withdrawRewards(uint256 _depositId) external {
