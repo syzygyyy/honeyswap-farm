@@ -17,8 +17,6 @@ contract RewardManager is IRewardManager, Ownable {
     IERC20 public immutable rewardToken;
     uint256 public immutable exchangeRate;
 
-    event MissingReward(address indexed referrer, uint256 owedReward);
-
     constructor(IERC20 _rewardToken, uint256 _exchangeRate) Ownable() {
         require(_exchangeRate < SCALE, "RM: Invalid reward ratio");
         rewardToken = _rewardToken;
@@ -41,7 +39,9 @@ contract RewardManager is IRewardManager, Ownable {
     }
 
     function grantFundsAccess() external override onlyOwner {
-        rewardToken.safeApprove(owner(), type(uint256).max);
+        address owner_ = owner();
+        rewardToken.safeApprove(owner_, type(uint256).max);
+        emit FundsAccessGranted(owner_);
     }
 
     function rebalance() external override {

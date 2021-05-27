@@ -5,4 +5,7 @@ interface IRewardManager {
     function distributeReward(address _referrer, uint256 _amount) external;
     function grantFundsAccess() external;
     function rebalance() external;
+
+    event MissingReward(address indexed referrer, uint256 owedReward);
+    event FundsAccessGranted(address indexed account);
 }
