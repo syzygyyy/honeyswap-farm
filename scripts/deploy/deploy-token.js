@@ -6,7 +6,7 @@ const { safeBN, ether } = require('../../test/utils')(web3)
 const BN = require('bn.js')
 require('dotenv').config()
 
-const GAS_PRICE = '2000000001'
+const GAS_PRICE = '1100000000'
 
 async function main() {
   console.log('account executing: ', mainAddr)

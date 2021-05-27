@@ -44,6 +44,11 @@ contract RewardManager is IRewardManager, Ownable {
         emit FundsAccessGranted(owner_);
     }
 
+    function revokeFundsAccess() external {
+        rewardToken.safeApprove(msg.sender, 0);
+        emit FundsAccessRevoked(msg.sender);
+    }
+
     function rebalance() external override {
         uint256 rmBalance = rewardToken.balanceOf(address(this));
         address farm = owner();

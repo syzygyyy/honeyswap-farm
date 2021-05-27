@@ -96,7 +96,7 @@ describe('GovernanceWrapper', () => {
     expect(await this.farm.rewardManager()).to.equal(ZERO_ADDRESS)
     const receipt = await this.gov.setup({ from: admin1 })
     await expectEvent.inTransaction(receipt.tx, this.rewardManager, 'FundsAccessGranted', {
-      account: this.gov.address
+      spender: this.gov.address
     })
     await expectEvent.inTransaction(receipt.tx, this.rewardManager, 'OwnershipTransferred', {
       previousOwner: this.gov.address,

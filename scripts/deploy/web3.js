@@ -11,7 +11,7 @@ module.exports = () => {
     'wss://xdai.poanetwork.dev/wss'
   ]
 
-  const ENDPOINT_INDEX = 2
+  const ENDPOINT_INDEX = 4
 
   const endpoint = endpoints[ENDPOINT_INDEX]
   console.log('endpoint: ', endpoint)
