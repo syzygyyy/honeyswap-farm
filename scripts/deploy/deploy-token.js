@@ -1,10 +1,9 @@
 const { web3, mainAddr } = require('./web3')()
-const { deploy, loadJson } = require('./utils')
+const { deploy, loadJson, saveJson } = require('./utils')
 const CombTokenData = require('../../build/contracts/CombToken.json')
 const StreamedAirdropperData = require('../../build/contracts/StreamedAirdropper.json')
 const { safeBN, ether } = require('../../test/utils')(web3)
 const BN = require('bn.js')
-require('dotenv').config()
 
 const GAS_PRICE = '1100000000'
 
@@ -135,18 +134,13 @@ async function main() {
     console.log(`${Math.min((i + 1) * batchSize, totalRecipients)}/${totalRecipients}`)
   }
 
-  const leftOver = await hsfToken.methods.balanceOf(mainAddr).call()
-  await hsfToken.methods.transfer(process.env.SECURE_DEST, leftOver).send({
-    from: mainAddr,
-    nonce: startingNonce++,
-    gasPrice: GAS_PRICE,
-    gas: 200000
-  })
+  addresses[chain].hsfToken = hsfToken.options.address
+  addresses[chain].airdropper = airdropper.options.address
+  saveJson('../../addresses.json', addresses, [null, 2])
 
   console.log(`deployed token at ${hsfToken.options.address}`)
   console.log(`deployed airdropper at ${airdropper.options.address}`)
   console.log(`airdropped ${totalRecipients} addresses`)
-  console.log(`remaining xComb tokens transferred to ${process.env.SECURE_DEST}`)
 }
 
 main()
