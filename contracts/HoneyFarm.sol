@@ -171,7 +171,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         totalShares = pool.totalShares;
     }
 
-    // underscore placed after to avoid collide with the ERC721._baseURI property
+    // underscore placed after to avoid collision with the ERC721._baseURI property
     function setBaseURI(string memory baseURI_) external override onlyOwner {
         _setBaseURI(baseURI_);
     }
