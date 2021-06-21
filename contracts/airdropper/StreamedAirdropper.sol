@@ -5,8 +5,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
+import "./IStreamedAirdropper.sol";
 
-contract StreamedAirdropper {
+contract StreamedAirdropper is IStreamedAirdropper {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
@@ -42,20 +43,11 @@ contract StreamedAirdropper {
         distributionEnd = _distributionEnd;
     }
 
-    function addVesting(address[] memory _users, uint256[] memory _amounts)
-        external
-    {
-        require(_users.length == _amounts.length, "SA: Param length mismatch");
-        uint256 totalAmount;
-        for (uint256 i = 0; i < _users.length; i++) {
-            uint256 amount = _amounts[i];
-            address user = _users[i];
-            Vesting storage userVesting = vestingUsers[user];
-            userVesting.amountLeft = userVesting.amountLeft.add(amount);
-            totalAmount = totalAmount.add(amount);
-            emit VestingAdded(user, amount);
-        }
-        token.safeTransferFrom(msg.sender, address(this), totalAmount);
+    function addVesting(address _user, uint256 _amount) external override {
+        Vesting storage userVesting = vestingUsers[_user];
+        userVesting.amountLeft = userVesting.amountLeft.add(_amount);
+        token.safeTransferFrom(msg.sender, address(this), _amount);
+        emit VestingAdded(_user, _amount);
     }
 
     function withdraw() external {
@@ -66,7 +58,7 @@ contract StreamedAirdropper {
         _withdrawTokensTo(_recipient);
     }
 
-    function pendingTokens(address _user) public view returns(uint256) {
+    function pendingTokens(address _user) public view returns (uint256) {
         Vesting storage userVesting = vestingUsers[_user];
         uint256 amountLeft = userVesting.amountLeft;
         uint256 realLastWithdraw = userVesting.lastWithdraw;
