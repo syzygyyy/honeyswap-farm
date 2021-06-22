@@ -52,7 +52,7 @@ describe('StreamedAirdropper', () => {
   it('does not overwrite values when vesting is added', async () => {
     // attack setup
     await this.token.mint(attacker1, ether('1'))
-    const overwriteAmount = new BN('1')
+    const overwriteAmount = safeBN(1)
     await this.token.approve(this.airdropper.address, overwriteAmount, { from: attacker1 })
 
     // attack
@@ -76,15 +76,15 @@ describe('StreamedAirdropper', () => {
   })
   it('increases pending tokens with time', async () => {
     // jump to middle
-    const skipTo = this.start.add(this.end).div(new BN('2'))
+    const skipTo = this.start.add(this.end).div(safeBN(2))
     await time.increaseTo(skipTo)
 
     let userVesting = await this.airdropper.vestingUsers(user1)
     let pendingTokens = await this.airdropper.pendingTokens(user1)
     expectEqualWithinFraction(
       pendingTokens,
-      userVesting.amountLeft.div(new BN('2')),
-      new BN('1'),
+      userVesting.amountLeft.div(safeBN(2)),
+      safeBN(1),
       bnE('1', '6')
     )
 
@@ -92,8 +92,8 @@ describe('StreamedAirdropper', () => {
     pendingTokens = await this.airdropper.pendingTokens(user2)
     expectEqualWithinFraction(
       pendingTokens,
-      userVesting.amountLeft.div(new BN('2')),
-      new BN('1'),
+      userVesting.amountLeft.div(safeBN(2)),
+      safeBN(1),
       bnE('1', '6')
     )
   })
@@ -102,7 +102,7 @@ describe('StreamedAirdropper', () => {
     const tracker = await trackBalance(this.token, user1)
     const receipt = await this.airdropper.withdraw({ from: user1 })
     this.withdrawDelta = await tracker.delta()
-    expectEqualWithinFraction(this.withdrawDelta, pendingTokens, new BN('1'), bnE('1', '6'))
+    expectEqualWithinFraction(this.withdrawDelta, pendingTokens, safeBN(1), bnE('1', '6'))
     expectEvent(receipt, 'Withdraw', {
       user: user1,
       recipient: user1,
@@ -112,7 +112,7 @@ describe('StreamedAirdropper', () => {
   it('correctly updates vesting information after direct withdraw', async () => {
     const userVesting = await this.airdropper.vestingUsers(user1)
     const { timestamp } = await web3.eth.getBlock(await time.latestBlock())
-    expect(userVesting.lastWithdraw).to.be.bignumber.equal(new BN(timestamp))
+    expect(userVesting.lastWithdraw).to.be.bignumber.equal(safeBN(timestamp))
     expect(userVesting.amountLeft).to.be.bignumber.equal(this.amounts[0].sub(this.withdrawDelta))
   })
   it('allows withdraw to another address', async () => {
@@ -121,7 +121,7 @@ describe('StreamedAirdropper', () => {
     const user3Tracker = await trackBalance(this.token, user3)
     const receipt = await this.airdropper.withdrawTo(user3, { from: user2 })
     this.withdrawDelta = await user3Tracker.delta()
-    expectEqualWithinFraction(this.withdrawDelta, pendingTokens, new BN('1'), bnE('1', '6'))
+    expectEqualWithinFraction(this.withdrawDelta, pendingTokens, safeBN(1), bnE('1', '6'))
     expect(await user2Tracker.delta()).to.be.bignumber.equal(ZERO)
     expectEvent(receipt, 'Withdraw', {
       user: user2,
@@ -132,7 +132,7 @@ describe('StreamedAirdropper', () => {
   it('correctly updates vesting information after gifted withdraw', async () => {
     const user2Vesting = await this.airdropper.vestingUsers(user2)
     const { timestamp } = await web3.eth.getBlock(await time.latestBlock())
-    expect(user2Vesting.lastWithdraw).to.be.bignumber.equal(new BN(timestamp))
+    expect(user2Vesting.lastWithdraw).to.be.bignumber.equal(safeBN(timestamp))
     expect(user2Vesting.amountLeft).to.be.bignumber.equal(this.amounts[1].sub(this.withdrawDelta))
     const user3Vesting = await this.airdropper.vestingUsers(user3)
     expect(user3Vesting.lastWithdraw).to.be.bignumber.equal(ZERO)

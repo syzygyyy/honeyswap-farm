@@ -84,7 +84,17 @@ module.exports = (web3) => {
     }
   }
 
-  return {
+  function solidityKeccak256(...args) {
+    const types = []
+    const values = []
+    for (const { type, value } of args) {
+      types.push(type)
+      values.push(value)
+    }
+    return web3.utils.sha3(web3.eth.abi.encodeParameters(types, values))
+  }
+
+  const utils = {
     ZERO,
     bnSum,
     encodeFunctionCall,
@@ -97,6 +107,14 @@ module.exports = (web3) => {
     expectEqualWithinError,
     expectEqualWithinFraction,
     bnE,
-    safeBN
+    safeBN,
+    solidityKeccak256
+  }
+
+  const merkleUtils = require('./merkle.js')(web3, utils)
+
+  return {
+    ...utils,
+    merkleUtils
   }
 }
