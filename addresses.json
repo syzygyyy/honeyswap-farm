@@ -1,16 +1,24 @@
 {
   "xdai": {
-    "hsfToken": "0x38Fb649Ad3d6BA1113Be5F57B927053E97fC5bF7",
+    "combToken": "0x38Fb649Ad3d6BA1113Be5F57B927053E97fC5bF7",
     "airdropper": "0xdD36008685108aFafc11F88bBc66C39A851Df843",
+    "claimer": null,
     "rewardManager": "0x82374C59709AAc2f7864191a3c492932379536F4",
     "farm": "0xB44825cF0d8D4dD552f2434056c41582415AaAa1",
     "governanceWrapper": "0xfBA19af3bE412E08AF9c7Cf60756d238D3cEAd25",
     "multiWithdrawer": "0x53f224f83b2b2365caf4178f52c234da1ecf392f"
   },
   "rinkeby": {
-    "hsfToken": "0xe26EF0e1890d83e196191822752749a37d7A199f",
-    "farm": "0x087B269605a4a9e4c2C9dFAEc424A9Ad46e4d986",
-    "rewardManager": "0xB4252EE3503C39C08DC429B4081Cd0100187a721",
-    "airdropper": "0x4BeA4ba49063061123aC8A51796F277Cfe2457F4"
+    "xdai": {
+      "combToken": "0xe26EF0e1890d83e196191822752749a37d7A199f",
+      "farm": "0x087B269605a4a9e4c2C9dFAEc424A9Ad46e4d986",
+      "rewardManager": "0xB4252EE3503C39C08DC429B4081Cd0100187a721",
+      "airdropper": "0x4BeA4ba49063061123aC8A51796F277Cfe2457F4"
+    },
+    "polygon": {
+      "combToken": "0xdF3bAb8e43B67252Db81B795ef334f7478Fc6AC7",
+      "airdropper": "0xdaffb0e17f9cb0d7c8a9b9a57d2fc4b1a972aca2",
+      "claimer": "0xe1cC3eC02154ebc78f83574C278f536B42213C00"
+    }
   }
 }

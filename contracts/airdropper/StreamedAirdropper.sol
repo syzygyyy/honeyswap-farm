@@ -35,6 +35,7 @@ contract StreamedAirdropper is IStreamedAirdropper {
         uint256 _distributionEnd
     ) {
         require(
+            block.timestamp <= _distributionStart &&
             _distributionStart < _distributionEnd,
             "SA: Invalid distribution time"
         );
