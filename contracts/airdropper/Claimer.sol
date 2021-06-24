@@ -26,6 +26,11 @@ contract Claimer is Ownable {
         address indexed recipient,
         uint256 amount
     );
+    event Emptied(
+        address indexed emptier,
+        address indexed recipient,
+        uint256 amount
+    );
 
     constructor(
         address _airdropper,
@@ -47,7 +52,9 @@ contract Claimer is Ownable {
 
     function emptyTo(address _recipient) external onlyOwner {
         require(block.timestamp >= claimEnd, "Claimer: Claim period ongoing");
-        token.safeTransfer(_recipient, token.balanceOf(address(this)));
+        uint256 emptyAmount = token.balanceOf(address(this));
+        token.safeTransfer(_recipient, emptyAmount);
+        emit Emptied(msg.sender, _recipient, emptyAmount);
     }
 
     function claimTo(
