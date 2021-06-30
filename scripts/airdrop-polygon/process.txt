@@ -1,0 +1,2 @@
+1. Create snapshot into raw-snapshot.json
+2. Merklize by running merkleize-snapshot.js
