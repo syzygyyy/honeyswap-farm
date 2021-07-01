@@ -20,9 +20,8 @@ contract MultiWithdrawer {
         uint256 depositIdCount = _depositIds.length;
         for (uint256 i; i < depositIdCount; i++) {
             uint256 depositId = _depositIds[i];
-            farm.transferFrom(msg.sender, address(this), depositId);
+            require(farm.ownerOf(depositId) == msg.sender, "MultiWithdrawer: Not owner");
             farm.withdrawRewards(depositId);
-            farm.transferFrom(address(this), msg.sender, depositId);
         }
         uint256 availableRewards = rewardToken.balanceOf(address(this));
         rewardToken.safeTransfer(msg.sender, availableRewards);

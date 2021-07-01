@@ -8,10 +8,11 @@ module.exports = () => {
     'https://rpc.xdaichain.com/',
     'https://xdai.poanetwork.dev',
     'wss://rpc.xdaichain.com/wss',
-    'wss://xdai.poanetwork.dev/wss'
+    'wss://xdai.poanetwork.dev/wss',
+    process.env.MATIC_ENDPOINT
   ]
 
-  const ENDPOINT_INDEX = 5
+  const ENDPOINT_INDEX = 6
 
   const endpoint = endpoints[ENDPOINT_INDEX]
   console.log('endpoint: ', endpoint)

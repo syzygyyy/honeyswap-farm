@@ -362,7 +362,11 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
     }
 
     function withdrawRewards(uint256 _depositId) external {
-        require(ownerOf(_depositId) == msg.sender, "HF: Must be owner of deposit");
+        withdrawRewardsTo(msg.sender, _depositId);
+    }
+
+    function withdrawRewardsTo(address _recipient, uint256 _depositId) public {
+        require(_isApprovedOrOwner(msg.sender, _depositId), "HF: Must be owner of deposit");
         DepositInfo storage deposit = depositInfo[_depositId];
         PoolInfo storage pool = poolInfo[deposit.pool];
         uint256 _unlockTime = deposit.unlockTime;
@@ -375,7 +379,7 @@ contract HoneyFarm is IHoneyFarm, Ownable, ERC721 {
         deposit.setRewards = uint256(0);
         deposit.rewardDebt = deposit.rewardShare.mul(pool.accHsfPerShare).div(SCALE);
         _rewardReferrer(deposit.referrer, pendingRewards);
-        _safeHsfTransfer(msg.sender, pendingRewards);
+        _safeHsfTransfer(_recipient, pendingRewards);
         emit RewardsWithdraw(_depositId, pendingRewards);
     }
 

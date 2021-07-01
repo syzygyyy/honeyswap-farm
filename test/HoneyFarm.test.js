@@ -816,7 +816,7 @@ describe('HoneyFarm', () => {
 
       await expectRevert(
         this.farm.withdrawRewards(depositId, { from: user1 }),
-        'ERC721: owner query for nonexistent token'
+        'ERC721: operator query for nonexistent token'
       )
     })
   })
