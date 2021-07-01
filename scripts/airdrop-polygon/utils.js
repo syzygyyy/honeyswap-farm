@@ -44,30 +44,33 @@ module.exports = (web3) => {
     return resStr
   }
 
+  function* getChunkIndices(start, end, spacing) {
+    for (let from = start; from < end; from += spacing) {
+      yield [from, Math.min(from + spacing - 1, end)]
+    }
+  }
+
   async function getPastLogs(
     contract,
     event,
     options,
-    fromBlock,
-    finalToBlock,
+    startBlock,
+    endBlock,
     spacing,
     eventProcessor
   ) {
-    console.log('fromBlock: ', fromBlock)
-    console.log('finalToBlock: ', finalToBlock)
+    console.log('startBlock: ', startBlock)
+    console.log('endBlock: ', endBlock)
     console.log('')
-    let toBlock
-    eventProcessor = eventProcessor ?? ((event) => event)
-    const eventChunks = []
-    do {
-      toBlock = Math.min(fromBlock + spacing, finalToBlock)
-      console.log('fromBlock: ', fromBlock)
-      console.log('toBlock: ', toBlock)
-      const newEvents = await contract.getPastEvents(event, { ...options, fromBlock, toBlock })
-      eventChunks.push(await Promise.all(newEvents.map(eventProcessor)))
-      fromBlock = toBlock + 1
-    } while (toBlock < finalToBlock)
-    return eventChunks
+    let processedEvents = []
+    eventProcessor = eventProcessor ?? ((eventChunk) => eventChunk)
+    for (const [fromBlock, toBlock] of getChunkIndices(startBlock, endBlock, spacing)) {
+      const perc = (fromBlock - startBlock) / (endBlock - startBlock)
+      console.log(`${fromBlock}-${toBlock} (${Math.round(perc * 1e4) / 1e2}%) ${new Date()}`)
+      const eventChunk = await contract.getPastEvents(event, { ...options, fromBlock, toBlock })
+      processedEvents = processedEvents.concat(await eventProcessor(eventChunk))
+    }
+    return processedEvents
   }
 
   const getDuplicates = async (Model, match, uniqueFields) => {
@@ -75,7 +78,8 @@ module.exports = (web3) => {
     for (let field of uniqueFields) {
       uniqueId[field] = `$${field}`
     }
-    const [res] = await Model.aggregate([
+    console.log('uniqueId: ', uniqueId)
+    const res = await Model.aggregate([
       { $match: match },
       {
         $group: {
@@ -89,15 +93,13 @@ module.exports = (web3) => {
       { $unwind: '$dups' },
       { $project: { _id: false, count: false } },
       { $group: { _id: null, dups: { $push: '$dups' } } }
-    ])
-    return res
+    ]).allowDiskUse(true)
+    console.log('res: ', res)
+    return res[0]
   }
 
-  const removeDuplicateTransfers = async (Transfer, pairAddress) => {
-    const duplicates = await getDuplicates(Transfer, { pair: pairAddress }, [
-      'logIndex',
-      'blockNumber'
-    ])
+  const removeDuplicateTransfers = async (Transfer, token) => {
+    const duplicates = await getDuplicates(Transfer, { token }, ['logIndex', 'blockNumber'])
     if (duplicates) {
       await Transfer.deleteMany({ _id: { $in: duplicates.dups } })
       console.log(`removed ${duplicates.dups.length} duplicates`)
@@ -144,25 +146,17 @@ module.exports = (web3) => {
     return height
   }
 
-  const getHighestBlock = async (Transfer, pairAddress) => {
-    const res = await Transfer.aggregate([
-      { $group: { _id: { pair: '$pair' }, highestBlock: { $max: '$blockNumber' } } },
-      { $match: { _id: { pair: pairAddress } } }
-    ])
-    return res[0]
-  }
-
   return {
     gql,
     loadJson,
     saveJson,
     getPastLogs,
+    getChunkIndices,
     // pairFactory,
     // uniFarmFactories,
     loadPair,
     ether,
     removeDuplicateTransfers,
-    getHighestBlock,
     getDuplicates,
     constants: {
       ZERO_ADDRESS,

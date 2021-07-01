@@ -26,7 +26,7 @@ const transferSchema = new Schema({
     }
   },
   logIndex: Number,
-  pair: { type: String, validate: isAddressValidator() },
+  token: { type: String, validate: isAddressValidator() },
   from: { type: String, validate: isAddressValidator() },
   to: { type: String, validate: isAddressValidator() },
   value: String

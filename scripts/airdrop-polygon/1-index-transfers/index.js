@@ -1,24 +1,43 @@
-const { tokens } = require('../reward-map.js')
+const { allocations } = require('../reward-map.js')
 const web3 = require('../web3.js')()
 const mongoose = require('../mongoose.js')
-const indexSingleToken = require('./index-single-token.js')(mongoose)
+const indexSingleToken = require('./index-single-token.js')(web3, mongoose)
 const PairAbi = require('../artifacts/pair-abi.json')
-const { getBlockHeightFromDate } = require('../utils.js')(web3)
+const { Transfer } = mongoose
 
-const getAddresses = (tokens, timeframe) => tokens.map(({ address }) => ({ address, timeframe }))
+const getAddresses = (tokens, timeframe) => tokens.map((token) => ({ ...token, timeframe }))
 
-async function indexToken({ address, timeframe: { end } }) {
-  const endBlock = await getBlockHeightFromDate(end)
+const getHighestBlock = async (token) => {
+  const res = await Transfer.aggregate([
+    { $group: { _id: { token: '$token' }, highestBlock: { $max: '$blockNumber' } } },
+    { $match: { _id: { token } } }
+  ])
+  return res?.[0]?.highestBlock ?? -1
+}
+
+let i = 0
+async function indexToken({ address, timeframe: { end }, createdAt }, total) {
+  console.log('\n\n\ntoken:', address)
+  console.log(`${++i}/${total}`)
+  const highestBlock = await getHighestBlock(address)
   const tokenContract = new web3.eth.Contract(PairAbi, address)
-  await indexSingleToken(address, tokenContract, endBlock)
+  try {
+    await indexSingleToken(address, tokenContract, Math.max(createdAt, highestBlock + 1), end)
+  } catch (err) {
+    console.log('no more space')
+    console.log('err: ', JSON.stringify(err).slice(0, 1000))
+    throw new Error('done')
+  }
 }
 
 async function main() {
   await mongoose.connectDB()
-  const allTokens = tokens.reduce(
-    (allTokens, { tokens, timeframe }) => allTokens.concat(getAddresses(tokens, timeframe)),
-    []
-  )
+  const allTokens = allocations
+    .reduce(
+      (allTokens, { tokens, timeframe }) => allTokens.concat(getAddresses(tokens, timeframe)),
+      []
+    )
+    .map(({ address, ...token }) => ({ address: web3.utils.toChecksumAddress(address), ...token }))
 
   // const block = await getBlockHeightFromDate('01-04-2021')
   // console.log('block: ', block)
@@ -27,10 +46,10 @@ async function main() {
   //   await getBlockHeightFromDate('01-04-2021')
   // )
 
-  await tokens[0].getCreatedAt(web3, tokens[0].tokens[0].address)
-
   // await indexToken(allTokens[0])
-  // await Promise.all(allTokens.map(indexToken))
+  for (const token of allTokens) {
+    await indexToken(token, allTokens.length)
+  }
 }
 
 main().then(() => process.exit(0))

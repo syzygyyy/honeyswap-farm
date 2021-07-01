@@ -2,45 +2,93 @@ const PairAbi = require('./artifacts/pair-abi.json')
 const UniswapFactoryAbi = require('./artifacts/uniswap-pair-factory-abi.json')
 const DxswapFactoryAbi = require('./artifacts/dxswap-pair-factory-abi.json')
 
-const INITIAL_TIMEFRAME = () => ({ start: '01-04-2021', end: '21-05-2021' })
+const INITIAL_TIMEFRAME = () => ({ start: 12732871, end: 14758717 })
 const INTERVAL = (60 / 2) * 60 * 24 * 7
 
-const createGetCreatedAt = (FactoryAbi) => (factoryAddress, factoryCreatedAt) => async (
-  web3,
-  pairToken
-) => {
-  const pairContract = new web3.eth.Contract(PairAbi, pairToken)
-  const token0 = await pairContract.methods.token0().call()
-  const token1 = await pairContract.methods.token1().call()
-  const factory = new web3.eth.Contract(FactoryAbi, factoryAddress)
-  const storedPair = await factory.methods.getPair(token0, token1).call()
-  if (storedPair.toLowerCase() !== pairToken.toLowerCase()) {
-    throw new Error(
-      `factory mismatch; factory: ${factoryAddress}; pairToken: ${pairToken}; storedPair: ${storedPair}`
-    )
+const createGetCreatedAt =
+  (FactoryAbi) => (factoryAddress, factoryCreatedAt) => async (web3, pairToken) => {
+    const pairContract = new web3.eth.Contract(PairAbi, pairToken)
+    const token0 = await pairContract.methods.token0().call()
+    const token1 = await pairContract.methods.token1().call()
+    const factory = new web3.eth.Contract(FactoryAbi, factoryAddress)
+    const storedPair = await factory.methods.getPair(token0, token1).call()
+    if (storedPair.toLowerCase() !== pairToken.toLowerCase()) {
+      throw new Error(
+        `factory mismatch; factory: ${factoryAddress}; pairToken: ${pairToken}; storedPair: ${storedPair}`
+      )
+    }
+    let events
+    let i = 0
+    do {
+      events = await factory.getPastEvents('PairCreated', {
+        filter: { token0, token1 },
+        fromBlock: factoryCreatedAt + i * INTERVAL,
+        toBlock: factoryCreatedAt + INTERVAL * (i + 1) - 1
+      })
+      i++
+      console.log(`pairToken: ${pairToken} (${i})`)
+    } while (events.length === 0)
+    return events[0].blockNumber
   }
-  let events
-  let i = 0
-  do {
-    events = await factory.getPastEvents('PairCreated', {
-      filter: { token0, token1 },
-      fromBlock: factoryCreatedAt + i * INTERVAL,
-      toBlock: factoryCreatedAt + INTERVAL * (i + 1) - 1
-    })
-    i++
-    console.log(`pairToken: ${pairToken} (${i})`)
-  } while (events.length === 0)
-  return events[0].blockNumber
-}
 
 const uniswapCreatedAt = createGetCreatedAt(UniswapFactoryAbi)
 const dxswapCreatedAt = createGetCreatedAt(DxswapFactoryAbi)
 
 module.exports = {
   // farm addresses to be ignored from the airdrop
-  blacklistedAddresses: [],
-  tokens: [
+  blacklistedAddresses: {
+    ignoreAddresses: [
+      // quickswap
+      '0x574Fe4E8120C4Da1741b5Fd45584de7A5b521F0F',
+      '0x070D182EB7E9C3972664C959CE58C5fC6219A7ad',
+      '0x4A73218eF2e820987c59F838906A82455F42D98b',
+      '0x251d9837a13F38F3Fe629ce2304fa00710176222',
+      '0x8FF56b5325446aAe6EfBf006a4C1D88e4935a914',
+      '0x573bb5CCC26222d8108EdaCFcC7F7cb9e388Af10',
+      '0xEd8413eCEC87c3d4664975743c02DB3b574012a7',
+      '0x8f2ac4EC8982bF1699a6EeD696e204FA2ccD5D91',
+      '0x6C6920aD61867B86580Ff4AfB517bEc7a499A7Bb',
+      '0xB26bfcD52D997211C13aE4C35E82ced65AF32A02',
+      '0x785AaCd49c1Aa3ca573F2a32Bb90030A205b8147',
+      '0x97D69E23DF7BBB01F9eA78b5651cb6ad125D6d9a',
+      '0xB02b036976Fa441A7B26C8931dC6919BfA810Aa7',
+      '0x7Ca29F0DB5Db8b88B332Aa1d67a2e89DfeC85E7E',
+      '0x8CFD1B9B7478E7B0422916B72d1DB6A9D513D734',
+      '0xD1C762861AAe85dF2e586a668A793AAfF820932b',
+      '0xf1A99964822316C920E47823e5C67388a52aD326',
+      '0x97Efe8470727FeE250D7158e6f8F63bb4327c8A2',
+      '0x8cFad56Eb742BA8CAEA813e47779E9C38f27cA6E',
+      '0x8917692e0Bdb47AF1D36837805E141Ed79065dFC',
+      '0xF4c1dfe482570bbA9c8b941B162a7509B9C54958',
+      '0xDC06a5aD9F76Fb5DfAE69Ca629ae3632E6F66994',
+      '0xf563fAe71bDAcDD370098CeCff14dbe2c9518a6b',
+      '0xb11856d3Aea0203e50B8520479C6332daBcF3f82',
+      '0x71a7D3a5e09C21d18FfdF57a7Ad5499B21e587f4',
+      '0x19f227C90Ccd615858A7F7848b3b1eb2C652E328',
+      '0x72ed24d2b2D98D3c4b5297ce244f623B9357F798',
+      // curve farms / non user contracts
+      '0xe381C25de995d62b453aF8B931aAc84fcCaa7A62',
+      '0xDE762D1c39dD3362C9401398935148D204bb1813',
+      // dfyn
+      '0x4ea90e9c3479ba7190a9509010dF7cA14e95f967',
+      '0xEfe569aa3d6598004f2ef1921f46E774398F7d0d',
+      '0x5e0E8C763E9826d41C7ee631d6AC1203503024c3',
+      '0x28Bf5111B86D41427c02DFB9E98E55E5BB57d692',
+      '0x18aE962a022DB2F33507659BD6196561083dBdB7',
+      '0x84D0640Cd8c366BcA7Abc3492fa3CA99C8e32615',
+      // sushiswap
+      '0x0769fd68dFb93167989C6f7254cd0D766Fb2841F'
+    ],
+    removeAddresses: [
+      // aave farm / non user contracts
+      '0x445FE580eF8d70FF569aB36e80c647af338db351',
+      '0xeab7831c96876433dB9B8953B4e7e8f66c3125c3',
+      '0x7d60F21072b585351dFd5E8b17109458D97ec120'
+    ]
+  },
+  allocations: [
     {
+      id: 'quickswap',
       airdrop: 12500,
       timeframe: INITIAL_TIMEFRAME(),
       getCreatedAt: uniswapCreatedAt('0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32', 4931780),
@@ -157,11 +205,6 @@ module.exports = {
           createdAt: 13981908
         },
         {
-          address: '0x5ef8747d1dc4839e92283794a10d448357973ac0',
-          weight: 3590202,
-          createdAt: 15758491
-        },
-        {
           address: '0x096c5ccb33cfc5732bcd1f3195c13dbefc4c82f4',
           weight: 3450074,
           createdAt: 9390937
@@ -177,16 +220,6 @@ module.exports = {
           createdAt: 14372102
         },
         {
-          address: '0x50409de292f5f821888702e9538bf15fa273dfe6',
-          weight: 2907854,
-          createdAt: 15578935
-        },
-        {
-          address: '0xe55739e1feb9f9aed4ce34830a06ca6cc37494a0',
-          weight: 2823261,
-          createdAt: 14759604
-        },
-        {
           address: '0xe88e24f49338f974b528ace10350ac4576c5c8a1',
           weight: 2564574,
           createdAt: 13530089
@@ -199,6 +232,7 @@ module.exports = {
       ]
     },
     {
+      id: 'aave',
       airdrop: 2500,
       timeframe: INITIAL_TIMEFRAME(),
       // aave a tokens (30-06-2021 12:05 UTC)
@@ -241,6 +275,7 @@ module.exports = {
       ]
     },
     {
+      id: 'sushiswap',
       airdrop: 3333,
       timeframe: INITIAL_TIMEFRAME(),
       getCreatedAt: uniswapCreatedAt('0xc35dadb65012ec5796536bd9864ed8773abc74c4', 11333218),
@@ -284,6 +319,7 @@ module.exports = {
       ]
     },
     {
+      id: 'curve',
       airdrop: 3334,
       timeframe: INITIAL_TIMEFRAME(),
       tokens: [
@@ -292,20 +328,11 @@ module.exports = {
           address: '0xE7a24EF0C5e95Ffb0f6684b813A78F2a3AD7D171',
           weight: 391358563.15,
           createdAt: 13479479
-        },
-        {
-          address: '0x8096ac61db23291252574D49f036f0f9ed8ab390',
-          weight: 11696005.69,
-          createdAt: 14884836
-        },
-        {
-          address: '0xf8a57c1d3b9629b77b6726a042ca48990A84Fb49',
-          weight: 10469492.34,
-          createdAt: 15601117
         }
       ]
     },
     {
+      id: 'dfyn',
       airdrop: 3333,
       timeframe: INITIAL_TIMEFRAME(),
       getCreatedAt: uniswapCreatedAt('0xe7fb3e833efe5f9c441105eb65ef8b261266423b', 5436831),
@@ -327,11 +354,6 @@ module.exports = {
           createdAt: 6132801
         },
         {
-          address: '0x39eaa90a70e8fdc04e1f63db04e1c62c9ace0641',
-          weight: 21643413,
-          createdAt: 9735085
-        },
-        {
           address: '0x7d51bad48d253dae37cc82cad07f73849286deec',
           weight: 11088330,
           createdAt: 5484229
@@ -340,16 +362,6 @@ module.exports = {
           address: '0xc3379226aeef21464d05676305dad1261d6f3fac',
           weight: 9832619,
           createdAt: 5574459
-        },
-        {
-          address: '0x39bed7f1c412ab64443196a6fecb2ac20c707224',
-          weight: 9145819,
-          createdAt: 15466931
-        },
-        {
-          address: '0x9e2fbb31fbd68472f6cd54a1635b8cd64d78fc1c',
-          weight: 9035214,
-          createdAt: 15165377
         },
         {
           address: '0xb5e1a07c9b6ab3bee8d9bf4066d324c5da89c07f',
@@ -364,10 +376,11 @@ module.exports = {
       ]
     },
     {
+      id: 'honeyswap',
       airdrop: 25000,
       timeframe: {
-        start: '21-05-2021',
-        end: '01-06-2021'
+        start: 14758717,
+        end: 16363690
       },
       getCreatedAt: dxswapCreatedAt('0x03DAa61d8007443a6584e3d8f85105096543C19c', 14599890),
       // top honeyswap pairs (30-06-2021 12:32 UTC)
