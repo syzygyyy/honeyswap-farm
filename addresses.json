@@ -8,6 +8,14 @@
     "governanceWrapper": "0xfBA19af3bE412E08AF9c7Cf60756d238D3cEAd25",
     "multiWithdrawer": "0x53f224f83b2b2365caf4178f52c234da1ecf392f"
   },
+  "polygon": {
+    "combToken": "0x37D1EbC3Af809b8fADB45DCE7077eFc629b2B5BB",
+    "airdropper": "0x3Fe30742aD8491402c8aee251ff57e3E9b18Ff87",
+    "rewardManager": "0xf72e8827aa4c03e2c49aa95a6550dd4c8a65a969",
+    "farm": "0x62d7e2484fcfc6752b9473260efe1b86cabac34e",
+    "governanceWrapper": "0xE41505dC55128fDa0BBBB6455BB7e242900ef45b",
+    "multiWithdrawer": "0xD8A9529f88365B309c9aDcc81f099308599481Ff"
+  },
   "rinkeby": {
     "xdai": {
       "combToken": "0xe26EF0e1890d83e196191822752749a37d7A199f",
