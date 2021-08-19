@@ -1,0 +1,17 @@
+Simple deploy checklist
+
+[ ] 1. deploy token
+[ ] 2. airdropper and add vested parties.
+[ ] 3. deploy reward manager
+[ ] 4. grant temporary access to funds
+[ ] 5. approve farm
+[ ] 6. deploy farm
+[ ] 7. deploy governance wrapper
+[ ] 8. transfer farm ownership to gov wrapper
+[ ] 9. transfer reward manager ownership to gov wrapper
+[ ] 10. call setup
+[ ] 11. verify everything
+[ ] 12. revoke funds access for reward manager
+[ ] 13. deposit tokens into reward manager
+[ ] 14. deploy multi withdrawer
+[ ] 15. deploy claimer
