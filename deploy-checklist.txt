@@ -15,3 +15,4 @@ Simple deploy checklist
 [ ] 13. deposit tokens into reward manager
 [ ] 14. deploy multi withdrawer
 [ ] 15. deploy claimer
+[ ] 16. transfer claimer ownership
